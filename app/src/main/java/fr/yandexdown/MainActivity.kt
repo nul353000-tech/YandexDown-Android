@@ -1,6 +1,7 @@
 package fr.yandexdown
 
 import android.app.DownloadManager
+import android.app.Activity
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
@@ -9,6 +10,9 @@ import android.os.Bundle
 import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.IntentSenderRequest
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -40,6 +44,10 @@ import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
 import javax.crypto.spec.GCMParameterSpec
 import javax.crypto.SecretKey
+import com.google.android.gms.auth.api.identity.Identity
+import com.google.android.gms.auth.api.identity.AuthorizationRequest
+import com.google.android.gms.common.api.Scope
+import com.google.android.gms.common.api.ApiException
 
 class MainActivity : ComponentActivity() {
     private var clipboardLink by mutableStateOf("")
@@ -62,7 +70,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sharedLink = intent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
-        setContent { YandexDownScreen(applicationContext, sharedLink, clipboardLink) }
+        setContent { YandexDownScreen(this, sharedLink, clipboardLink) }
     }
 }
 
@@ -92,6 +100,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var autoProcessedLink by remember { mutableStateOf("") }
     var yandexClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("yandex_client_id", "") ?: "") }
     var yandexToken by remember { mutableStateOf(TokenVault.read(context, "yandex_token")) }
+    var googleDriveToken by remember { mutableStateOf(TokenVault.read(context, "google_drive_token")) }
     var tokenEntry by remember { mutableStateOf("") }
     var showAccountSettings by remember { mutableStateOf(false) }
     var showLinkTools by remember { mutableStateOf(true) }
@@ -100,6 +109,24 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var bypassCityStatus by remember { mutableStateOf("Non vérifié") }
     var bypassCityCatalog by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    val googleAuthorizationLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            try {
+                val authResult = Identity.getAuthorizationClient(context)
+                    .getAuthorizationResultFromIntent(result.data)
+                val token = authResult.accessToken.orEmpty()
+                if (token.isNotBlank()) {
+                    TokenVault.write(context, "google_drive_token", token)
+                    googleDriveToken = token
+                    status = "Google Drive autorisé. Le jeton est chiffré sur cet appareil."
+                } else status = "Google n’a pas renvoyé de jeton d’accès."
+            } catch (e: ApiException) {
+                status = "Autorisation Google échouée : ${e.statusCode}."
+            }
+        } else status = "Autorisation Google annulée."
+    }
 
     fun runTask(message: String, task: suspend () -> Unit) {
         scope.launch {
