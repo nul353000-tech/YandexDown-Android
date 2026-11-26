@@ -16,6 +16,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Transfert direct sans fichier temporaire d'un fichier public Yandex vers le Yandex Disk privé connecté.
 - Affichage des fichiers et dossiers partagés.
 - Prise en charge sans liste blanche d’extensions : tous les fichiers renvoyés par Yandex Disk sont affichés, notamment les vidéos (MP4, MKV, AVI, MOV, WebM, etc.) et les archives (ZIP, RAR, 7Z, TAR, GZ, BZ2, XZ, ISO, etc.). Les transferts utilisent un flux binaire générique afin de ne pas refuser les extensions inconnues ; les limites de taille et les règles propres à chaque fournisseur cloud restent applicables.
+- Prise en charge des images sans liste blanche d’extensions : JPG/JPEG, PNG, GIF, WebP, HEIC, TIFF, BMP, SVG et autres fichiers image sont affichés et transférés comme fichiers binaires, sans conversion automatique.
 - Navigation dans les sous-dossiers.
 - Pagination des dossiers (jusqu'à 10 000 éléments par parcours).
 - Téléchargement d'un dossier complet sous forme d'archive ZIP.
@@ -41,6 +42,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Résolution Bypass.city par API : l'application lit le schéma OpenAPI publié à l'exécution, vérifie le champ URL et les paramètres obligatoires, puis appelle uniquement l'opération documentée si le schéma est compatible.
 - Connexion Google Drive avec Google Identity Services et autorisation limitée à `drive.file`.
 - Transfert direct d'un fichier public Yandex Disk vers Google Drive via une session d'envoi Drive resumable, sans stockage permanent local.
+- Extraction côté serveur d’une archive ZIP après son transfert vers pCloud, dans le compte cloud connecté, avec suivi de progression ; les fichiers extraits sont placés à la racine du compte pCloud et le ZIP d’origine est conservé.
 
 ## Configuration des fournisseurs cloud
 
@@ -80,6 +82,7 @@ Note importante sur le stockage : les téléchargements manuels sont enregistré
 - Un mot de passe de partage est différent du mot de passe du compte.
 - Les raccourcisseurs qui redirigent directement en HTTP(S) sont suivis ; les pages intermédiaires nécessitant JavaScript peuvent nécessiter une action humaine.
 - Les fichiers vidéo et archives ne sont pas filtrés par extension : les formats courants et inconnus sont transmis comme données binaires. La prise en charge effective d’un format dépend ensuite du service cloud destinataire, de ses limites de taille et de ses propres règles.
+- L’extraction ZIP directement dans le cloud est actuellement disponible pour pCloud via son API officielle `extractarchive`. Google Drive, Dropbox et OneDrive ne proposent pas dans leurs API standard utilisées ici d’action équivalente pour extraire une archive sur le serveur ; pour ces destinations, le ZIP reste stocké tel quel. Les archives chiffrées par mot de passe ne sont pas encore prises en charge par l’action d’extraction.
 - Aucun CAPTCHA, paiement, contrôle anti-robot ou contrôle d'accès n'est contourné.
 - Les jetons Yandex et Google sont chiffrés avec Android Keystore. Les jetons d'accès Google sont de courte durée et peuvent devoir être renouvelés.
 - Les transferts Yandex vers Dropbox, OneDrive et pCloud utilisent leurs API officielles via un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Dropbox et OneDrive disposent d'une file WorkManager avec reprise de session et vérification de l'intégrité distante lorsqu'un hash est fourni. pCloud dispose d'un worker persistant avec suivi uploadprogress et vérification checksumfile ; après interruption, il recommence l'envoi complet car l'API officielle ne fournit pas d'offset de reprise documenté. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
@@ -97,6 +100,7 @@ Bypass.city est appelé depuis l'interface native via son API : l'application li
 - Android DownloadManager: https://developer.android.com/reference/android/app/DownloadManager
 - Android WorkManager: https://developer.android.com/topic/libraries/architecture/workmanager
 - Android Storage Access Framework: https://developer.android.com/training/data-storage/shared/documents-files
+- pCloud API — extraction d’archives : https://docs.pcloud.com/methods/archiving/extractarchive.html et suivi : https://docs.pcloud.com/methods/archiving/extractarchiveprogress.html
 - Google Drive API: https://developers.google.com/drive/api/guides/manage-uploads
 - Microsoft Graph — Upload sessions: https://learn.microsoft.com/graph/api/driveitem-createuploadsession
 - Dropbox API v2 — Upload sessions: https://docs.dropboxapi.com/dropbox-api/api-reference/user-endpoints/files/upload-session-start
