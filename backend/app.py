@@ -54,7 +54,9 @@ def yandex_archive_download(public_key, path, target):
         api_error(meta, "Yandex Disk")
     href = meta.json().get("href", "")
     parsed = urlparse(href)
-    if parsed.scheme != "https" or not (parsed.hostname or "").endswith(("yandex.net", "yandex.com")):
+    host = (parsed.hostname or "").lower()
+    trusted_host = host in ("yandex.net", "yandex.com", "yandex.ru") or host.endswith((".yandex.net", ".yandex.com", ".yandex.ru"))
+    if parsed.scheme != "https" or not trusted_host:
         raise HTTPException(502, "Yandex a retourné une URL de téléchargement inattendue.")
     total = 0
     with HTTP.get(href, stream=True, timeout=(20, 180)) as response:
@@ -153,12 +155,30 @@ def upload_dropbox(token, root, rel, file_path, folder_cache):
 def onedrive_create_folder(token, parent_id, name):
     if parent_id == "root":
         url = "https://graph.microsoft.com/v1.0/me/drive/root/children"
+        list_url = "https://graph.microsoft.com/v1.0/me/drive/root/children"
     else:
         url = f"https://graph.microsoft.com/v1.0/me/drive/items/{parent_id}/children"
-    response = HTTP.post(url, headers={"Authorization": f"Bearer {token}",
-                                       "Content-Type": "application/json"},
+        list_url = url
+    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    escaped = name.replace("'", "''")
+    existing = HTTP.get(list_url, headers=headers,
+                        params={"$filter": f"name eq '{escaped}'", "$select": "id,name,folder"},
+                        timeout=60)
+    if existing.ok:
+        for item in existing.json().get("value", []):
+            if item.get("name") == name and "folder" in item:
+                return item["id"]
+    response = HTTP.post(url, headers=headers,
                          json={"name": name, "folder": {},
-                               "@microsoft.graph.conflictBehavior": "rename"}, timeout=60)
+                               "@microsoft.graph.conflictBehavior": "fail"}, timeout=60)
+    if response.status_code == 409:
+        existing = HTTP.get(list_url, headers=headers,
+                            params={"$filter": f"name eq '{escaped}'", "$select": "id,name,folder"},
+                            timeout=60)
+        if existing.ok:
+            for item in existing.json().get("value", []):
+                if item.get("name") == name and "folder" in item:
+                    return item["id"]
     if not response.ok:
         api_error(response, "OneDrive création dossier")
     return response.json()["id"]
