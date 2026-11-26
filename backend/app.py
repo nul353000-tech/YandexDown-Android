@@ -14,6 +14,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 app = FastAPI(title="YandexDown ZIP Cloud Extractor", version="1.0.0")
+REQUESTS_BY_IP = {}
 HTTP = requests.Session()
 MAX_ARCHIVE_BYTES = 150 * 1024 * 1024
 MAX_EXPANDED_BYTES = 500 * 1024 * 1024
@@ -74,7 +75,19 @@ def yandex_archive_download(public_key, path, target):
 
 
 def google_folder(token, name, parent):
-    headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {token}"}
+    escaped = name.replace("\\", "\\\\").replace("'", "\\'")
+    query = f"name = '{escaped}' and mimeType = 'application/vnd.google-apps.folder' and trashed = false"
+    if parent:
+        query += f" and '{parent}' in parents"
+    existing = HTTP.get("https://www.googleapis.com/drive/v3/files",
+                        headers=headers,
+                        params={"q": query, "pageSize": 100, "fields": "files(id,name)"},
+                        timeout=60)
+    if existing.ok:
+        for folder in existing.json().get("files", []):
+            if folder.get("name") == name:
+                return folder["id"]
     metadata = {"name": name, "mimeType": "application/vnd.google-apps.folder"}
     if parent:
         metadata["parents"] = [parent]
@@ -268,6 +281,13 @@ def health():
 
 @app.post("/v1/extract")
 def extract_archive(payload: ExtractRequest, request: Request):
+    now = time.time()
+    client_ip = request.client.host if request.client else "unknown"
+    recent = [stamp for stamp in REQUESTS_BY_IP.get(client_ip, []) if now - stamp < 3600]
+    if len(recent) >= 20:
+        raise HTTPException(429, "Limite de sécurité atteinte : réessaie dans un moment.")
+    recent.append(now)
+    REQUESTS_BY_IP[client_ip] = recent
     provider = payload.provider.strip().lower()
     if provider not in ("google drive", "dropbox", "onedrive", "yandex disk privé"):
         raise HTTPException(400, "Destination non prise en charge par le relais.")
