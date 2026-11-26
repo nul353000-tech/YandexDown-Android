@@ -12,6 +12,8 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Lecture des métadonnées via l'API officielle Yandex Disk.
 - Affichage des fichiers et dossiers partagés.
 - Navigation dans les sous-dossiers.
+- Pagination des dossiers (jusqu'à 10 000 éléments par parcours).
+- Téléchargement d'un dossier complet sous forme d'archive ZIP.
 - Téléchargement de fichiers via le gestionnaire Android (notifications système et reprise gérée par Android).
 - Noms de fichiers nettoyés avant enregistrement.
 - Gestion des erreurs HTTP et messages renvoyés par Yandex.
