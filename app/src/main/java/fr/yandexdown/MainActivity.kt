@@ -146,6 +146,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Text("Analyser / afficher le contenu")
                 }
+                }
                 Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
 
                 if (selected != null) {
