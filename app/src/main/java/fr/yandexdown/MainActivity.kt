@@ -1,13 +1,20 @@
 package fr.yandexdown
 
+import android.app.DownloadManager
+import android.content.Context
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudDownload
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Link
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,113 +33,216 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { YandexDownScreen() }
+        setContent { YandexDownScreen(applicationContext) }
     }
 }
 
 private val http = OkHttpClient.Builder()
     .connectTimeout(20, TimeUnit.SECONDS)
-    .readTimeout(60, TimeUnit.SECONDS)
+    .readTimeout(90, TimeUnit.SECONDS)
+    .followRedirects(true)
     .build()
+
+private data class DiskItem(val name: String, val path: String, val type: String, val size: Long)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun YandexDownScreen() {
+fun YandexDownScreen(context: Context) {
     var link by remember { mutableStateOf("") }
+    var publicKey by remember { mutableStateOf("") }
+    var currentPath by remember { mutableStateOf("") }
+    var title by remember { mutableStateOf("YandexDown") }
     var status by remember { mutableStateOf("Colle un lien public Yandex Disk pour commencer.") }
     var busy by remember { mutableStateOf(false) }
-    var result by remember { mutableStateOf("") }
+    var items by remember { mutableStateOf<List<DiskItem>>(emptyList()) }
+    var selected by remember { mutableStateOf<DiskItem?>(null) }
     val scope = rememberCoroutineScope()
+
+    fun runTask(message: String, task: suspend () -> Unit) {
+        scope.launch {
+            busy = true
+            status = message
+            try { task() } catch (e: Exception) {
+                status = e.message?.take(300) ?: "Une erreur est survenue."
+            } finally { busy = false }
+        }
+    }
 
     MaterialTheme(colorScheme = lightColorScheme()) {
         Scaffold(topBar = {
-            TopAppBar(title = { Text("YandexDown") }, navigationIcon = {
-                Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.padding(start = 16.dp))
-            })
+            TopAppBar(
+                title = { Text(title) },
+                navigationIcon = {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null,
+                        modifier = Modifier.padding(start = 16.dp))
+                }
+            )
         }) { padding ->
             Column(
-                modifier = Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp)
+                Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Téléchargement et gestion de liens", style = MaterialTheme.typography.headlineSmall)
-                Text("Version initiale : résolution des liens publics Yandex Disk via l’API officielle.")
                 OutlinedTextField(
                     value = link, onValueChange = { link = it },
-                    modifier = Modifier.fillMaxWidth(), label = { Text("Lien Yandex Disk") },
-                    leadingIcon = { Icon(Icons.Default.Link, contentDescription = null) },
-                    singleLine = false
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("Lien public Yandex Disk") },
+                    leadingIcon = { Icon(Icons.Default.Link, null) },
+                    singleLine = true
                 )
                 Button(
                     onClick = {
-                        scope.launch {
-                            busy = true; result = ""; status = "Analyse du lien…"
-                            try {
-                                val info = withContext(Dispatchers.IO) { resolveYandexPublicLink(link.trim()) }
-                                result = info
-                                status = "Lien analysé."
-                            } catch (e: Exception) {
-                                status = "Échec : ${e.message ?: "erreur inconnue"}"
-                            } finally { busy = false }
+                        runTask("Analyse du lien…") {
+                            val parsed = withContext(Dispatchers.IO) { inspectPublicLink(link.trim()) }
+                            publicKey = link.trim()
+                            currentPath = ""
+                            title = parsed.first
+                            items = parsed.second
+                            selected = null
+                            status = if (items.isEmpty()) "Ressource reconnue. Aucun élément listé." else "${items.size} élément(s) trouvé(s)."
                         }
                     },
                     enabled = !busy && link.isNotBlank(),
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    if (busy) CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    else Text("Analyser le lien")
+                    if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    else Text("Analyser / afficher le contenu")
                 }
-                Text(status, style = MaterialTheme.typography.bodyMedium)
-                if (result.isNotBlank()) {
-                    ElevatedCard(Modifier.fillMaxWidth()) {
-                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Informations reçues", style = MaterialTheme.typography.titleMedium)
-                            Text(result)
+                Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+
+                if (selected != null) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Sélection : ${selected!!.name}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+                        TextButton(onClick = { selected = null }) { Text("Fermer") }
+                    }
+                    Button(
+                        onClick = {
+                            val item = selected!!
+                            runTask("Préparation du téléchargement…") {
+                                val url = withContext(Dispatchers.IO) { getDownloadUrl(publicKey, item.path) }
+                                val id = enqueueDownload(context, url, item.name)
+                                status = "Téléchargement ajouté (ID $id) dans Téléchargements/YandexDown."
+                                selected = null
+                            }
+                        },
+                        enabled = !busy && selected!!.type == "file",
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Télécharger le fichier") }
+                }
+
+                if (currentPath.isNotEmpty()) {
+                    TextButton(onClick = {
+                        val parent = currentPath.substringBeforeLast("/", "")
+                        runTask("Ouverture du dossier…") {
+                            val data = withContext(Dispatchers.IO) { listPublicFolder(publicKey, parent) }
+                            currentPath = parent
+                            items = data
+                            status = "${data.size} élément(s)."
+                        }
+                    }) { Text("← Dossier parent") }
+                }
+
+                if (items.isNotEmpty()) {
+                    Text("Contenu", style = MaterialTheme.typography.titleMedium)
+                    LazyColumn(
+                        modifier = Modifier.weight(1f, fill = true),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        items(items, key = { it.path }) { item ->
+                            ListItem(
+                                headlineContent = { Text(item.name, maxLines = 2) },
+                                supportingContent = {
+                                    Text(if (item.type == "dir") "Dossier" else formatSize(item.size))
+                                },
+                                leadingContent = {
+                                    Icon(if (item.type == "dir") Icons.Default.Folder else Icons.Default.InsertDriveFile, null)
+                                },
+                                modifier = Modifier.clickable {
+                                    if (item.type == "dir") {
+                                        runTask("Chargement du dossier…") {
+                                            val data = withContext(Dispatchers.IO) { listPublicFolder(publicKey, item.path) }
+                                            currentPath = item.path
+                                            items = data
+                                            status = "${data.size} élément(s) dans ${item.name}."
+                                        }
+                                    } else selected = item
+                                }
+                            )
+                            HorizontalDivider()
                         }
                     }
+                } else {
+                    Spacer(Modifier.weight(1f))
+                    Text("Les liens publics et dossiers accessibles sont pris en charge. Les téléchargements sont enregistrés dans le dossier Téléchargements/YandexDown.", style = MaterialTheme.typography.bodySmall)
                 }
-                HorizontalDivider()
-                Text("Fonctions prévues", style = MaterialTheme.typography.titleMedium)
-                FeatureLine("Liens et dossiers publics Yandex Disk")
-                FeatureLine("Accès privé via OAuth Yandex autorisé")
-                FeatureLine("Mots de passe de partage fournis par l’utilisateur, si l’API les accepte")
-                FeatureLine("Transfert cloud-à-cloud et stockage distant")
-                FeatureLine("Résolution de liens avec moteurs externes compatibles")
-                FeatureLine("Historique, reprise et récupération des médias accessibles")
-                Text(
-                    "Les transferts cloud, OAuth, mots de passe de partage et résolveurs externes ne sont pas encore implémentés dans cette première version. Aucun CAPTCHA ni contrôle d’accès ne sera contourné.",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
+                Text("Limites actuelles : connexion cloud/OAuth, transfert cloud-à-cloud, résolveurs tiers et authentification privée restent à intégrer. Aucun CAPTCHA ni contrôle d’accès n’est contourné.",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
             }
         }
     }
 }
 
-@Composable
-private fun FeatureLine(text: String) {
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("•")
-        Text(text)
+private fun inspectPublicLink(url: String): Pair<String, List<DiskItem>> {
+    require(url.startsWith("https://")) { "Utilise un lien HTTPS." }
+    require(url.contains("disk.yandex") || url.contains("yadi.sk")) { "Ce lien ne semble pas être un lien Yandex Disk." }
+    val json = apiGet("https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${enc(url)}&limit=100")
+    val name = json.optString("name", "YandexDown")
+    val type = json.optString("type", "file")
+    val entries = if (type == "dir") parseItems(json) else listOf(
+        DiskItem(name, json.optString("path", "/"), "file", json.optLong("size"))
+    )
+    return name to entries
+}
+
+private fun listPublicFolder(key: String, path: String): List<DiskItem> {
+    val url = "https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${enc(key)}&path=${enc(path)}&limit=100"
+    return parseItems(apiGet(url))
+}
+
+private fun parseItems(json: JSONObject): List<DiskItem> {
+    val embedded = json.optJSONObject("_embedded") ?: return emptyList()
+    val array = embedded.optJSONArray("items") ?: return emptyList()
+    return (0 until array.length()).mapNotNull { i ->
+        val obj = array.optJSONObject(i) ?: return@mapNotNull null
+        DiskItem(obj.optString("name"), obj.optString("path"), obj.optString("type"), obj.optLong("size"))
     }
 }
 
-private fun resolveYandexPublicLink(publicUrl: String): String {
-    require(publicUrl.startsWith("https://") || publicUrl.startsWith("http://")) { "URL invalide" }
-    require("disk.yandex" in publicUrl || "yadi.sk" in publicUrl || "disk.yandex.ru" in publicUrl) {
-        "Ce lien ne semble pas être un lien Yandex Disk"
-    }
-    val encoded = URLEncoder.encode(publicUrl, Charsets.UTF_8.name())
-    val request = Request.Builder()
-        .url("https://cloud-api.yandex.net/v1/disk/public/resources?public_key=$encoded")
-        .get().build()
+private fun getDownloadUrl(key: String, path: String): String {
+    val url = "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${enc(key)}&path=${enc(path)}"
+    return apiGet(url).optString("href").takeIf { it.startsWith("https://") }
+        ?: throw IllegalStateException("Yandex n’a pas fourni de lien de téléchargement.")
+}
+
+private fun apiGet(url: String): JSONObject {
+    val request = Request.Builder().url(url).get().build()
     http.newCall(request).execute().use { response ->
         val body = response.body?.string().orEmpty()
-        if (!response.isSuccessful) throw IllegalStateException("Yandex API HTTP ${response.code}: ${body.take(240)}")
-        val json = JSONObject(body)
-        val name = json.optString("name", "Sans nom")
-        val type = json.optString("type", "inconnu")
-        val size = if (json.has("size")) "\nTaille : ${json.optLong("size")} octets" else ""
-        val path = json.optString("path", "")
-        return "Nom : $name\nType : $type\nChemin : $path$size"
+        if (!response.isSuccessful) {
+            val detail = runCatching { JSONObject(body).optString("message") }.getOrNull().orEmpty()
+            throw IllegalStateException("Erreur Yandex HTTP ${response.code}: ${detail.ifBlank { body.take(180) }}")
+        }
+        return JSONObject(body)
     }
+}
+
+private fun enqueueDownload(context: Context, url: String, name: String): Long {
+    val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180).ifBlank { "yandex-file" }
+    val request = DownloadManager.Request(Uri.parse(url))
+        .setTitle(safeName)
+        .setDescription("Téléchargement depuis Yandex Disk")
+        .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+        .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "YandexDown/$safeName")
+        .setAllowedOverMetered(true)
+        .setAllowedOverRoaming(false)
+    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+    return manager.enqueue(request)
+}
+
+private fun enc(value: String): String = URLEncoder.encode(value, Charsets.UTF_8.name())
+
+private fun formatSize(size: Long): String = when {
+    size <= 0 -> "Fichier"
+    size < 1024 -> "$size octets"
+    size < 1024 * 1024 -> "${size / 1024} Ko"
+    else -> String.format("%.1f Mo", size / (1024.0 * 1024.0))
 }
