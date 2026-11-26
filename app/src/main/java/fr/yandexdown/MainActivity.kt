@@ -1199,8 +1199,37 @@ private fun refreshOneDriveToken(context: Context, clientId: String): String {
 }
 
 private fun transferPublicToOneDrive(publicKey: String, item: DiskItem, token: String): String {
-    require(item.type == "file" && item.size > 0L) { "Sélectionne un fichier non vide." }
+    require(item.type == "file") { "Sélectionne un fichier ou un dossier à archiver." }
     val safeName = item.name.replace("/", "_").replace("\\", "_")
+    if (item.size <= 0L) {
+        val sourceUrl = getDownloadUrl(publicKey, item.path)
+        http.newCall(Request.Builder().url(sourceUrl).get().build()).execute().use { source ->
+            if (!source.isSuccessful) throw IllegalStateException("Yandex HTTP ${source.code}.")
+            val body = source.body ?: error("Archive Yandex vide.")
+            val length = body.contentLength()
+            require(length in 1..(250L * 1024L * 1024L)) {
+                "OneDrive exige une taille connue pour l’archive. Limite du transfert direct : 250 Mo."
+            }
+            val uploadUrl = "https://graph.microsoft.com/v1.0/me/drive/root:/${enc(safeName).replace("+", "%20")}:/content"
+            val uploadBody = object : okhttp3.RequestBody() {
+                override fun contentType() = "application/zip".toMediaType()
+                override fun contentLength() = length
+                override fun writeTo(sink: okio.BufferedSink) {
+                    body.byteStream().use { it.copyTo(sink.outputStream()) }
+                }
+            }
+            val request = Request.Builder().url(uploadUrl)
+                .header("Authorization", "Bearer $token")
+                .put(uploadBody).build()
+            http.newCall(request).execute().use { response ->
+                val raw = response.body?.string().orEmpty()
+                if (response.code != 200 && response.code != 201) {
+                    throw IllegalStateException("Envoi OneDrive de l’archive HTTP ${response.code}: ${raw.take(220)}")
+                }
+                return JSONObject(raw).optString("name", safeName)
+            }
+        }
+    }
     val metadata = JSONObject().put("item", JSONObject().put("@microsoft.graph.conflictBehavior", "rename"))
     val create = Request.Builder()
         .url("https://graph.microsoft.com/v1.0/me/drive/root:/${enc(safeName).replace("+", "%20")}:/createUploadSession")
