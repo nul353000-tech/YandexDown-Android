@@ -95,7 +95,7 @@ private val http = OkHttpClient.Builder()
     .followRedirects(true)
     .build()
 
-private const val ZIP_RELAY_URL = "https://yandexdown-zip-extractor.onrender.com"
+private const val ZIP_RELAY_URL = "https://yandexdown-zip-extractor-zgen.onrender.com"
 private val zipRelayHttp = OkHttpClient.Builder()
     .connectTimeout(30, TimeUnit.SECONDS)
     .readTimeout(15, TimeUnit.MINUTES)
@@ -856,16 +856,12 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                         "Dropbox" -> {
                                             val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "").orEmpty()
                                             val access = refreshDropboxToken(context, clientId)
-                                            val output = extractZipViaCloudRelay(publicKey, archive, defaultCloud, access)
-                                            dropboxToken = TokenVault.read(context, "dropbox_access_token")
-                                            output
+                                            extractZipViaCloudRelay(publicKey, archive, defaultCloud, access)
                                         }
                                         "OneDrive" -> {
                                             val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "").orEmpty()
                                             val access = refreshOneDriveToken(context, clientId)
-                                            val output = extractZipViaCloudRelay(publicKey, archive, defaultCloud, access)
-                                            oneDriveToken = TokenVault.read(context, "onedrive_access_token")
-                                            output
+                                            extractZipViaCloudRelay(publicKey, archive, defaultCloud, access)
                                         }
                                         "pCloud" -> {
                                             require(pCloudToken.isNotBlank()) { "Connecte d’abord pCloud dans Comptes cloud." }
