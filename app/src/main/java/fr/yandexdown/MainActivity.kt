@@ -95,6 +95,15 @@ private val http = OkHttpClient.Builder()
     .followRedirects(true)
     .build()
 
+private const val ZIP_RELAY_URL = "https://yandexdown-zip-extractor.onrender.com"
+private val zipRelayHttp = OkHttpClient.Builder()
+    .connectTimeout(30, TimeUnit.SECONDS)
+    .readTimeout(15, TimeUnit.MINUTES)
+    .writeTimeout(15, TimeUnit.MINUTES)
+    .callTimeout(20, TimeUnit.MINUTES)
+    .followRedirects(false)
+    .build()
+
 internal data class DiskItem(val name: String, val path: String, val type: String, val size: Long, val md5: String = "")
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -834,17 +843,45 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             }
                         }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer directement vers pCloud") }
                     }
-                    if (publicKey.isNotBlank() && pCloudToken.isNotBlank() && selected!!.type == "file" && selected!!.name.endsWith(".zip", ignoreCase = true)) {
+                    if (publicKey.isNotBlank() && selected!!.type == "file" && selected!!.name.endsWith(".zip", ignoreCase = true)) {
                         OutlinedButton(enabled = !busy, onClick = {
                             val archive = selected!!
-                            runTask("Envoi et extraction ZIP dans pCloud…") {
+                            runTask("Extraction du ZIP dans $defaultCloud…") {
                                 val result = withContext(Dispatchers.IO) {
-                                    transferPublicToPCloud(publicKey, archive, pCloudToken, pCloudHost, extractZipAfterUpload = true)
+                                    when (defaultCloud) {
+                                        "Google Drive" -> {
+                                            require(googleDriveToken.isNotBlank()) { "Connecte d’abord Google Drive dans Comptes cloud." }
+                                            extractZipViaCloudRelay(publicKey, archive, defaultCloud, googleDriveToken)
+                                        }
+                                        "Dropbox" -> {
+                                            val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "").orEmpty()
+                                            val access = refreshDropboxToken(context, clientId)
+                                            val output = extractZipViaCloudRelay(publicKey, archive, defaultCloud, access)
+                                            dropboxToken = TokenVault.read(context, "dropbox_access_token")
+                                            output
+                                        }
+                                        "OneDrive" -> {
+                                            val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "").orEmpty()
+                                            val access = refreshOneDriveToken(context, clientId)
+                                            val output = extractZipViaCloudRelay(publicKey, archive, defaultCloud, access)
+                                            oneDriveToken = TokenVault.read(context, "onedrive_access_token")
+                                            output
+                                        }
+                                        "pCloud" -> {
+                                            require(pCloudToken.isNotBlank()) { "Connecte d’abord pCloud dans Comptes cloud." }
+                                            transferPublicToPCloud(publicKey, archive, pCloudToken, pCloudHost, extractZipAfterUpload = true)
+                                        }
+                                        "Yandex Disk privé" -> {
+                                            require(yandexToken.isNotBlank()) { "Connecte d’abord ton Yandex Disk privé." }
+                                            extractZipViaCloudRelay(publicKey, archive, defaultCloud, yandexToken)
+                                        }
+                                        else -> error("Destination inconnue.")
+                                    }
                                 }
-                                status = "Archive transférée et extraite dans pCloud : $result"
+                                status = "ZIP extrait dans $defaultCloud : $result"
                                 selected = null
                             }
-                        }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer et extraire le ZIP dans pCloud") }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer et extraire le ZIP dans $defaultCloud") }
                     }
                     if (publicKey.isNotBlank() && pCloudToken.isNotBlank() && selected!!.type == "file") {
                         OutlinedButton(
@@ -979,6 +1016,37 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
 
 
 
+
+private fun extractZipViaCloudRelay(publicKey: String, item: DiskItem, provider: String, accessToken: String): String {
+    require(item.type == "file" && item.name.endsWith(".zip", ignoreCase = true)) {
+        "Sélectionne une archive ZIP."
+    }
+    require(accessToken.isNotBlank()) { "Le compte $provider n’est pas connecté." }
+    val payload = JSONObject()
+        .put("public_key", publicKey)
+        .put("path", item.path)
+        .put("provider", provider)
+        .put("access_token", accessToken)
+    val request = Request.Builder()
+        .url("$ZIP_RELAY_URL/v1/extract")
+        .header("Accept", "application/json")
+        .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+        .build()
+    zipRelayHttp.newCall(request).execute().use { response ->
+        val body = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            val message = runCatching { JSONObject(body).optString("detail") }.getOrDefault("")
+            throw IllegalStateException(
+                message.ifBlank { "Relais ZIP HTTP ${response.code}: ${body.take(220)}" }
+            )
+        }
+        val result = JSONObject(body)
+        require(result.optBoolean("ok")) { "Le serveur n’a pas confirmé l’extraction." }
+        val count = result.optInt("files_extracted", 0)
+        val destination = result.optString("destination", "YandexDown_Extracted")
+        "$count fichier(s) · dossier $destination · fichiers temporaires supprimés"
+    }
+}
 
 private fun transferPublicToGoogleDrive(publicKey: String, item: DiskItem, accessToken: String): String {
     require(item.type == "file") { "Sélectionne un fichier pour le transfert Google Drive." }
