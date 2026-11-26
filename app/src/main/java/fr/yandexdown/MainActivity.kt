@@ -653,7 +653,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                             transfer.state == WorkInfo.State.CANCELLED
                                         val stateLabel = when (transfer.state) {
                                             WorkInfo.State.ENQUEUED -> "En attente"
-                                            WorkInfo.State.RUNNING -> "Téléchargement"
+                                            WorkInfo.State.RUNNING -> "Transfert en cours"
                                             WorkInfo.State.BLOCKED -> "En file"
                                             WorkInfo.State.SUCCEEDED -> "Terminé"
                                             WorkInfo.State.FAILED -> "Échec"
@@ -681,9 +681,16 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                             if (transfer.state == WorkInfo.State.SUCCEEDED) {
                                                 val digest = transfer.outputData.getString("sha256").orEmpty()
                                                 val verified = transfer.outputData.getBoolean("md5_verified", false)
+                                                val remoteSizeVerified = transfer.outputData.getBoolean("destination_size_verified", false)
+                                                val remoteHashVerified = transfer.outputData.getBoolean("destination_hash_verified", false)
+                                                val integrityLabel = when {
+                                                    remoteHashVerified -> "Hash distant Dropbox confirmé · taille distante validée"
+                                                    remoteSizeVerified -> "Taille distante validée · hash distant indisponible"
+                                                    verified -> "MD5 source validé · SHA-256 calculé"
+                                                    else -> "Taille contrôlée · SHA-256 calculé"
+                                                }
                                                 Text(
-                                                    if (verified) "MD5 distant validé · SHA-256 calculé"
-                                                    else "Taille contrôlée · SHA-256 calculé (pas de MD5 distant fourni)",
+                                                    integrityLabel + if (verified) " · MD5 source confirmé" else "",
                                                     style = MaterialTheme.typography.labelSmall,
                                                     color = MaterialTheme.colorScheme.secondary
                                                 )
@@ -760,6 +767,18 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 selected = null
                             }
                         }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer directement vers Dropbox") }
+                    }
+                    if (publicKey.isNotBlank() && dropboxToken.isNotBlank() && selected!!.type == "file") {
+                        OutlinedButton(
+                            enabled = !busy,
+                            onClick = {
+                                val item = selected!!
+                                val id = enqueuePersistentDropboxTransfer(context, publicKey, item)
+                                status = "Transfert Dropbox ajouté à la file persistante (ID ${id.toString().take(8)})."
+                                showTransferQueue = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Ajouter Dropbox à la file persistante") }
                     }
                     if (publicKey.isNotBlank() && oneDriveToken.isNotBlank() && selected!!.type == "file") {
                         Button(enabled = !busy, onClick = {
