@@ -2,6 +2,9 @@ package fr.yandexdown
 
 import android.app.DownloadManager
 import android.app.Activity
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Context
 import android.content.ClipboardManager
 import android.content.Intent
@@ -127,6 +130,8 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var showLinkTools by remember { mutableStateOf(true) }
     var showTransferQueue by remember { mutableStateOf(false) }
     var transferQueue by remember { mutableStateOf<List<WorkInfo>>(emptyList()) }
+    val canWritePublicDownloads = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
+        context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
     var resolverInput by remember { mutableStateOf("") }
     var resolverOutput by remember { mutableStateOf("") }
     var bypassCityStatus by remember { mutableStateOf("Non vérifié") }
@@ -140,6 +145,15 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     .getOrDefault(emptyList())
             }
             delay(1500)
+        }
+    }
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        status = if (granted) {
+            "Autorisation de stockage accordée. Le téléchargement va être ajouté à la file."
+        } else {
+            "Autorisation de stockage refusée : Android 8/9 ne peut pas écrire dans Téléchargements."
         }
     }
     val googleAuthorizationLauncher = rememberLauncherForActivityResult(
@@ -237,6 +251,21 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                 status = e.message?.take(300) ?: "Une erreur est survenue."
             } finally { busy = false }
         }
+    }
+
+    fun queueDownload(item: DiskItem, isPrivate: Boolean, isArchive: Boolean = false): Boolean {
+        if (!canWritePublicDownloads) {
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            status = "Autorise l'accès au stockage, puis relance le téléchargement."
+            return false
+        }
+        val id = enqueuePersistentDownload(context, publicKey, item, isPrivate)
+        status = if (isArchive) {
+            "Archive ajoutée à la file persistante (ID ${id.toString().take(8)})."
+        } else {
+            "Téléchargement ajouté à la file persistante (ID ${id.toString().take(8)})."
+        }
+        return true
     }
 
     LaunchedEffect(oauthCallback) {
@@ -790,12 +819,8 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     Button(
                         onClick = {
                             val item = selected!!
-                            runTask("Préparation du téléchargement…") {
-                                val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
-                                val id = enqueuePersistentDownload(context, publicKey, item, privateDownload)
-                                status = "Téléchargement ajouté à la file persistante (ID ${id.toString().take(8)})."
-                                selected = null
-                            }
+                            val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
+                            if (queueDownload(item, privateDownload)) selected = null
                         },
                         enabled = !busy && selected!!.type == "file" && !cloudOnly,
                         modifier = Modifier.fillMaxWidth()
@@ -837,12 +862,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                         TextButton(
                                             enabled = !busy && !cloudOnly,
                                             onClick = {
-                                                runTask("Préparation de l’archive du dossier…") {
-                                                    val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
-                                                    val archive = item.copy(name = "${item.name}.zip", size = 0L, md5 = "")
-                                                    val id = enqueuePersistentDownload(context, publicKey, archive, privateDownload)
-                                                    status = "Archive ajoutée à la file persistante (ID ${id.toString().take(8)})."
-                                                }
+                                                val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
+                                                val archive = item.copy(name = "${item.name}.zip", size = 0L, md5 = "")
+                                                queueDownload(archive, privateDownload, isArchive = true)
                                             }
                                         ) { Text(if (cloudOnly) "ZIP local désactivé" else "ZIP") }
                                     }

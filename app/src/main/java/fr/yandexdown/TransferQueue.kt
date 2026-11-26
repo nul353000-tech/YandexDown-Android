@@ -1,6 +1,9 @@
 package fr.yandexdown
 
+import android.Manifest
 import android.app.DownloadManager
+import android.content.pm.PackageManager
+import android.os.Build
 import android.content.Context
 import android.net.Uri
 import android.os.Environment
@@ -111,6 +114,11 @@ class YandexDownloadWorker(
 
         if (path.isBlank() || name.isBlank() || (!isPrivate && publicKey.isBlank())) {
             return@withContext Result.failure(workDataOf("error" to "Informations de téléchargement incomplètes."))
+        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q &&
+            applicationContext.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED
+        ) {
+            return@withContext Result.failure(workDataOf("error" to "Autorisation de stockage requise pour Android 8/9."))
         }
 
         val manager = applicationContext.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
