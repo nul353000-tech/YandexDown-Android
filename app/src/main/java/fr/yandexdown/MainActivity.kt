@@ -49,8 +49,8 @@ private data class DiskItem(val name: String, val path: String, val type: String
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun YandexDownScreen(context: Context) {
-    var link by remember { mutableStateOf("") }
+fun YandexDownScreen(context: Context, initialLink: String = "") {
+    var link by remember { mutableStateOf(initialLink) }
     var publicKey by remember { mutableStateOf("") }
     var currentPath by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("YandexDown") }
