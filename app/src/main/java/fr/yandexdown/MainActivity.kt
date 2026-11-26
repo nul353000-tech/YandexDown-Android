@@ -862,7 +862,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Envoyer directement vers Google Drive") }
                     }
-                    if (publicKey.isNotBlank() && yandexToken.isNotBlank() && selected!!.type == "file") {
+                    if (publicKey.isNotBlank() && yandexToken.isNotBlank()) {
                         OutlinedButton(
                             enabled = !busy,
                             onClick = {
