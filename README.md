@@ -61,6 +61,14 @@ Note importante sur le stockage : cette version télécharge les fichiers dans T
 - Les API des fournisseurs déterminent si un transfert direct cloud-à-cloud est possible.
 - Android n'autorise pas l'accès arbitraire au cache privé d'autres applications.
 
+## Résolution Bypass.vip / Bypass.city
+
+Les deux services demandés sont référencés pour la résolution des liens publicitaires :
+- Bypass.vip : https://bypass.vip/ (l'accès à son API premium nécessite un accès/API key selon ses conditions).
+- Bypass.city : https://bypass.city/ et liste des sites pris en charge : https://bypass.city/supported.
+
+Leur intégration automatique directe n'est pas activée dans cette version : aucune documentation d'API publique exploitable n'a été identifiée pour Bypass.city et l'accès API Bypass.vip n'est pas disponible sans clé/autorisation. L'application suit déjà les redirections HTTP simples vers Yandex. Les pages nécessitant CAPTCHA, anti-bot, connexion, scripts ou validation humaine restent ouvertes à l'utilisateur sans contournement.
+
 ## Références techniques
 
 - Yandex Disk REST API: https://yandex.com/dev/disk-api/doc/en/
