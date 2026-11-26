@@ -365,7 +365,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     Spacer(Modifier.weight(1f))
                     Text("Les liens publics et dossiers accessibles sont pris en charge. Les téléchargements sont enregistrés dans le dossier Téléchargements/YandexDown.", style = MaterialTheme.typography.bodySmall)
                 }
-                Text("Limites actuelles : connexion cloud/OAuth, transfert cloud-à-cloud, résolveurs tiers et authentification privée restent à intégrer. Aucun CAPTCHA ni contrôle d’accès n’est contourné.",
+                Text("Yandex public et privé disponibles après autorisation. Transfert cloud direct vers Yandex privé disponible. Google Drive, Dropbox, OneDrive, MEGA, pCloud et les résolveurs tiers restent à intégrer. Aucun CAPTCHA ni contrôle d’accès n’est contourné.",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
             }
         }
