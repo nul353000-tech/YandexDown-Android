@@ -262,6 +262,22 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         Text("Sélection : ${selected!!.name}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                         TextButton(onClick = { selected = null }) { Text("Fermer") }
                     }
+                    if (publicKey.isNotBlank() && yandexToken.isNotBlank()) {
+                        OutlinedButton(
+                            enabled = !busy,
+                            onClick = {
+                                val item = selected!!
+                                runTask("Transfert direct vers ton Yandex Disk privé…") {
+                                    val result = withContext(Dispatchers.IO) {
+                                        transferPublicToPrivateYandex(publicKey, item, yandexToken)
+                                    }
+                                    status = "Transfert cloud terminé : $result. Aucun fichier temporaire enregistré sur le téléphone."
+                                    selected = null
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Copier directement vers mon Yandex Disk privé") }
+                    }
                     Button(
                         onClick = {
                             val item = selected!!
@@ -356,6 +372,38 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     }
 }
 
+
+
+private fun transferPublicToPrivateYandex(publicKey: String, item: DiskItem, token: String): String {
+    val sourceUrl = getDownloadUrl(publicKey, item.path)
+    val isFolder = item.type == "dir"
+    val destinationName = (item.name + if (isFolder) ".zip" else "")
+        .replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180)
+    val destinationPath = "/YandexDown/$destinationName"
+    val uploadInfo = apiGetAuthorized(
+        "https://cloud-api.yandex.net/v1/disk/resources/upload?path=${enc(destinationPath)}&overwrite=true",
+        token
+    )
+    val uploadUrl = uploadInfo.optString("href").takeIf { it.startsWith("https://") }
+        ?: throw IllegalStateException("Yandex n’a pas fourni d’URL d’envoi.")
+    val sourceRequest = Request.Builder().url(sourceUrl).get().build()
+    http.newCall(sourceRequest).execute().use { source ->
+        if (!source.isSuccessful) throw IllegalStateException("Téléchargement source HTTP ${source.code}.")
+        val sourceBody = source.body ?: throw IllegalStateException("Réponse source vide.")
+        val uploadBody = object : okhttp3.RequestBody() {
+            override fun contentType() = sourceBody.contentType()
+            override fun contentLength() = sourceBody.contentLength()
+            override fun writeTo(sink: okio.BufferedSink) {
+                sourceBody.byteStream().use { input -> sink.outputStream().use { output -> input.copyTo(output) } }
+            }
+        }
+        val uploadRequest = Request.Builder().url(uploadUrl).put(uploadBody).build()
+        http.newCall(uploadRequest).execute().use { uploaded ->
+            if (!uploaded.isSuccessful) throw IllegalStateException("Envoi Yandex HTTP ${uploaded.code}.")
+        }
+    }
+    return destinationPath
+}
 
 private fun listPrivateFolder(token: String, path: String): List<DiskItem> {
     val all = mutableListOf<DiskItem>()
