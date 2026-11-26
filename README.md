@@ -18,7 +18,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Navigation dans les sous-dossiers.
 - Pagination des dossiers (jusqu'à 10 000 éléments par parcours).
 - Téléchargement d'un dossier complet sous forme d'archive ZIP.
-- Téléchargement de fichiers via le gestionnaire Android (notifications système et reprise gérée par Android).
+- File de transferts persistante via WorkManager et DownloadManager : notifications système, reprise réseau gérée par Android, contrôle de taille et comparaison MD5 lorsque Yandex fournit cette empreinte ; SHA-256 local conservé dans le résultat.
 - Noms de fichiers nettoyés avant enregistrement.
 - Gestion des erreurs HTTP et messages renvoyés par Yandex.
 - Compilation APK debug via GitHub Actions.
@@ -59,7 +59,7 @@ Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Intégration Bypass.vip : nécessite la documentation et l'accès API Premium autorisé.
-- File de transferts persistante, vérification d'intégrité et reprise applicative.
+- Reprise persistante et vérification distante des transferts cloud-to-cloud Dropbox, OneDrive et pCloud (la file locale utilise déjà WorkManager/DownloadManager).
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
 
 Note importante sur le stockage : les téléchargements manuels sont enregistrés dans Téléchargements/YandexDown via le service Android. Les transferts directs Yandex vers Google Drive ou Yandex Disk ne créent pas de fichier permanent local. Le mode cloud-only par défaut pour toutes les opérations reste à finaliser.
@@ -79,7 +79,7 @@ Note importante sur le stockage : les téléchargements manuels sont enregistré
 - Les raccourcisseurs qui redirigent directement en HTTP(S) sont suivis ; les pages intermédiaires nécessitant JavaScript peuvent nécessiter une action humaine.
 - Aucun CAPTCHA, paiement, contrôle anti-robot ou contrôle d'accès n'est contourné.
 - Les jetons Yandex et Google sont chiffrés avec Android Keystore. Les jetons d'accès Google sont de courte durée et peuvent devoir être renouvelés.
-- Les transferts Yandex vers Dropbox, OneDrive et pCloud passent par un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
+- Les transferts Yandex vers Dropbox, OneDrive et pCloud utilisent leurs API officielles via un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Ces transferts cloud-à-cloud restent synchrones et ne sont pas encore couverts par la file persistante. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
 - Android n'autorise pas l'accès arbitraire au cache privé d'autres applications.
 
 ## Résolution Bypass.vip / Bypass.city
@@ -98,3 +98,4 @@ Bypass.city est appelé depuis l'interface native via son API : l'application li
 - Android Storage Access Framework: https://developer.android.com/training/data-storage/shared/documents-files
 - Google Drive API: https://developers.google.com/drive/api/guides/manage-uploads
 - Dropbox API: https://www.dropbox.com/developers/documentation/http/documentation
+- Android WorkManager: https://developer.android.com/topic/libraries/architecture/workmanager

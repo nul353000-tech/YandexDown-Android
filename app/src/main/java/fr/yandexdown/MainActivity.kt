@@ -31,6 +31,9 @@ import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
+import androidx.work.WorkInfo
+import androidx.work.WorkManager
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.FormBody
@@ -88,7 +91,7 @@ private val http = OkHttpClient.Builder()
     .followRedirects(true)
     .build()
 
-private data class DiskItem(val name: String, val path: String, val type: String, val size: Long)
+internal data class DiskItem(val name: String, val path: String, val type: String, val size: Long, val md5: String = "")
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -122,11 +125,23 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var tokenEntry by remember { mutableStateOf("") }
     var showAccountSettings by remember { mutableStateOf(false) }
     var showLinkTools by remember { mutableStateOf(true) }
+    var showTransferQueue by remember { mutableStateOf(false) }
+    var transferQueue by remember { mutableStateOf<List<WorkInfo>>(emptyList()) }
     var resolverInput by remember { mutableStateOf("") }
     var resolverOutput by remember { mutableStateOf("") }
     var bypassCityStatus by remember { mutableStateOf("Non vérifié") }
     var bypassCityCatalog by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
+    LaunchedEffect(context) {
+        val workManager = WorkManager.getInstance(context)
+        while (true) {
+            transferQueue = withContext(Dispatchers.IO) {
+                runCatching { workManager.getWorkInfosByTag(TRANSFER_QUEUE_TAG).get() }
+                    .getOrDefault(emptyList())
+            }
+            delay(1500)
+        }
+    }
     val googleAuthorizationLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartIntentSenderForResult()
     ) { result ->
@@ -583,6 +598,85 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     }
                 }
                 Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                OutlinedButton(
+                    onClick = { showTransferQueue = !showTransferQueue },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (showTransferQueue) "Masquer la file de transferts" else "Afficher la file de transferts (${transferQueue.size})")
+                }
+                if (showTransferQueue) {
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("File de transferts persistante", style = MaterialTheme.typography.titleMedium)
+                            if (transferQueue.isEmpty()) {
+                                Text("Aucun transfert enregistré.", style = MaterialTheme.typography.bodySmall)
+                            } else {
+                                LazyColumn(
+                                    modifier = Modifier.heightIn(max = 220.dp),
+                                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                                ) {
+                                    items(transferQueue, key = { it.id }) { transfer ->
+                                        val name = transfer.inputData.getString("name") ?: "Fichier"
+                                        val downloaded = transfer.progress.getLong("downloaded_bytes", 0L)
+                                        val total = transfer.progress.getLong("total_bytes", 0L)
+                                        val finished = transfer.state == WorkInfo.State.SUCCEEDED ||
+                                            transfer.state == WorkInfo.State.FAILED ||
+                                            transfer.state == WorkInfo.State.CANCELLED
+                                        val stateLabel = when (transfer.state) {
+                                            WorkInfo.State.ENQUEUED -> "En attente"
+                                            WorkInfo.State.RUNNING -> "Téléchargement"
+                                            WorkInfo.State.BLOCKED -> "En file"
+                                            WorkInfo.State.SUCCEEDED -> "Terminé"
+                                            WorkInfo.State.FAILED -> "Échec"
+                                            WorkInfo.State.CANCELLED -> "Annulé"
+                                        }
+                                        Column(Modifier.fillMaxWidth()) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Column(Modifier.weight(1f)) {
+                                                    Text(name, maxLines = 1, style = MaterialTheme.typography.bodyMedium)
+                                                    val progressText = if (total > 0L) {
+                                                        "${formatSize(downloaded)} / ${formatSize(total)}"
+                                                    } else stateLabel
+                                                    Text("$stateLabel · $progressText", style = MaterialTheme.typography.bodySmall)
+                                                }
+                                                if (!finished) {
+                                                    TextButton(onClick = { cancelPersistentDownload(context, transfer.id) }) {
+                                                        Text("Annuler")
+                                                    }
+                                                }
+                                            }
+                                            if (transfer.state == WorkInfo.State.RUNNING) {
+                                                val fraction = if (total > 0L) (downloaded.toFloat() / total).coerceIn(0f, 1f) else 0f
+                                                LinearProgressIndicator(progress = fraction, modifier = Modifier.fillMaxWidth())
+                                            }
+                                            if (transfer.state == WorkInfo.State.SUCCEEDED) {
+                                                val digest = transfer.outputData.getString("sha256").orEmpty()
+                                                val verified = transfer.outputData.getBoolean("md5_verified", false)
+                                                Text(
+                                                    if (verified) "MD5 distant validé · SHA-256 calculé"
+                                                    else "Taille contrôlée · SHA-256 calculé (pas de MD5 distant fourni)",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.secondary
+                                                )
+                                                if (digest.isNotBlank()) {
+                                                    Text("SHA-256 : ${digest.take(20)}…", style = MaterialTheme.typography.labelSmall)
+                                                }
+                                            }
+                                            if (transfer.state == WorkInfo.State.FAILED) {
+                                                Text(
+                                                    transfer.outputData.getString("error") ?: "Le transfert a échoué.",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.error
+                                                )
+                                            }
+                                        }
+                                        HorizontalDivider()
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
 
                 if (selected != null) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -698,11 +792,8 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             val item = selected!!
                             runTask("Préparation du téléchargement…") {
                                 val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
-                                val url = withContext(Dispatchers.IO) {
-                                    if (privateDownload) getPrivateDownloadUrl(yandexToken, item.path) else getDownloadUrl(publicKey, item.path)
-                                }
-                                val id = enqueueDownload(context, url, item.name)
-                                status = "Téléchargement ajouté (ID $id) dans Téléchargements/YandexDown."
+                                val id = enqueuePersistentDownload(context, publicKey, item, privateDownload)
+                                status = "Téléchargement ajouté à la file persistante (ID ${id.toString().take(8)})."
                                 selected = null
                             }
                         },
@@ -748,12 +839,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                             onClick = {
                                                 runTask("Préparation de l’archive du dossier…") {
                                                     val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
-                                                    val url = withContext(Dispatchers.IO) {
-                                                        if (privateDownload) getPrivateDownloadUrl(yandexToken, item.path)
-                                                        else getDownloadUrl(publicKey, item.path)
-                                                    }
-                                                    val id = enqueueDownload(context, url, "${item.name}.zip")
-                                                    status = "Archive du dossier ajoutée aux téléchargements (ID $id)."
+                                                    val archive = item.copy(name = "${item.name}.zip", size = 0L, md5 = "")
+                                                    val id = enqueuePersistentDownload(context, publicKey, archive, privateDownload)
+                                                    status = "Archive ajoutée à la file persistante (ID ${id.toString().take(8)})."
                                                 }
                                             }
                                         ) { Text(if (cloudOnly) "ZIP local désactivé" else "ZIP") }
@@ -780,7 +868,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     Spacer(Modifier.weight(1f))
                     Text("Les liens publics et dossiers accessibles sont pris en charge. Les téléchargements sont enregistrés dans le dossier Téléchargements/YandexDown.", style = MaterialTheme.typography.bodySmall)
                 }
-                Text("Yandex public et privé disponibles après autorisation. Transfert cloud direct vers Yandex privé disponible. Google Drive, Dropbox, OneDrive, MEGA, pCloud et les résolveurs tiers restent à intégrer. Aucun CAPTCHA ni contrôle d’accès n’est contourné.",
+                Text("Yandex public et privé disponibles après autorisation. Transferts directs vers Google Drive, Dropbox, OneDrive et pCloud après connexion. MEGA attend le SDK Android officiel lié nativement. Aucun CAPTCHA ni contrôle d’accès n’est contourné.",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
             }
         }
@@ -883,7 +971,7 @@ private fun listPrivateFolder(token: String, path: String): List<DiskItem> {
     return all
 }
 
-private fun getPrivateDownloadUrl(token: String, path: String): String {
+internal fun getPrivateDownloadUrl(token: String, path: String): String {
     val url = "https://cloud-api.yandex.net/v1/disk/resources/download?path=${enc(path)}"
     return apiGetAuthorized(url, token).optString("href").takeIf { it.startsWith("https://") }
         ?: throw IllegalStateException("Yandex n’a pas fourni de lien de téléchargement privé.")
@@ -1093,7 +1181,7 @@ private fun transferPublicToPCloud(publicKey: String, item: DiskItem, token: Str
     }
 }
 
-private object TokenVault {
+internal object TokenVault {
     private const val alias = "yandexdown_master_key"
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
@@ -1305,7 +1393,7 @@ private fun inspectPublicLink(url: String): Triple<String, List<DiskItem>, Strin
     val name = json.optString("name", "YandexDown")
     val type = json.optString("type", "file")
     val entries = if (type == "dir") listPublicFolder(resolvedUrl, "") else listOf(
-        DiskItem(name, json.optString("path", "/"), "file", json.optLong("size"))
+        DiskItem(name, json.optString("path", "/"), "file", json.optLong("size"), json.optString("md5"))
     )
     return Triple(name, entries, resolvedUrl)
 }
@@ -1334,11 +1422,11 @@ private fun parseItems(json: JSONObject): List<DiskItem> {
     val array = embedded.optJSONArray("items") ?: return emptyList()
     return (0 until array.length()).mapNotNull { i ->
         val obj = array.optJSONObject(i) ?: return@mapNotNull null
-        DiskItem(obj.optString("name"), obj.optString("path"), obj.optString("type"), obj.optLong("size"))
+        DiskItem(obj.optString("name"), obj.optString("path"), obj.optString("type"), obj.optLong("size"), obj.optString("md5"))
     }
 }
 
-private fun getDownloadUrl(key: String, path: String): String {
+internal fun getDownloadUrl(key: String, path: String): String {
     val url = "https://cloud-api.yandex.net/v1/disk/public/resources/download?public_key=${enc(key)}&path=${enc(path)}"
     return apiGet(url).optString("href").takeIf { it.startsWith("https://") }
         ?: throw IllegalStateException("Yandex n’a pas fourni de lien de téléchargement.")
