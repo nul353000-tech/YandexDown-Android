@@ -744,7 +744,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 trailingContent = {
                                     if (item.type == "dir") {
                                         TextButton(
-                                            enabled = !busy,
+                                            enabled = !busy && !cloudOnly,
                                             onClick = {
                                                 runTask("Préparation de l’archive du dossier…") {
                                                     val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
@@ -756,7 +756,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                                     status = "Archive du dossier ajoutée aux téléchargements (ID $id)."
                                                 }
                                             }
-                                        ) { Text("ZIP") }
+                                        ) { Text(if (cloudOnly) "ZIP local désactivé" else "ZIP") }
                                     }
                                 },
                                 modifier = Modifier.clickable {
