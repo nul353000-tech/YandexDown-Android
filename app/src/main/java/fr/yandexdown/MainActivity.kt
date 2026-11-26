@@ -499,7 +499,7 @@ private fun resolveYandexSharedUrl(input: String): String {
     require(input.startsWith("https://")) { "Utilise un lien HTTPS." }
     val uri = Uri.parse(input)
     if (isYandexHost(uri.host)) return input
-    require(uri.host?.lowercase() in supportedShorteners) { "Ce raccourcisseur n’est pas pris en charge." }
+    require(uri.host?.lowercase()?.let { it in supportedShorteners } == true) { "Ce raccourcisseur n’est pas pris en charge." }
     http.newCall(Request.Builder().url(input).header("User-Agent", "YandexDown-Android/1.0").get().build()).execute().use { response ->
         val resolved = response.request.url.toString()
         require(response.isSuccessful && isYandexHost(Uri.parse(resolved).host)) {
@@ -514,7 +514,7 @@ private fun inspectPublicLink(url: String): Triple<String, List<DiskItem>, Strin
     val json = apiGet("https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${enc(resolvedUrl)}&limit=100")
     val name = json.optString("name", "YandexDown")
     val type = json.optString("type", "file")
-    val entries = if (type == "dir") listPublicFolder(url, "") else listOf(
+    val entries = if (type == "dir") listPublicFolder(resolvedUrl, "") else listOf(
         DiskItem(name, json.optString("path", "/"), "file", json.optLong("size"))
     )
     return Triple(name, entries, resolvedUrl)
