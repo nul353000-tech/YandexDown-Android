@@ -60,7 +60,6 @@ Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'
 - Intégration du SDK MEGA officiel Android (SDK natif C++/JNI) et transfert cloud-to-cloud MEGA.
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
-- Intégration Bypass.vip : nécessite la documentation et l'accès API Premium autorisé.
 - Reprise pCloud au dernier octet : non disponible dans l'API officielle uploadfile ; la file persistante relance un envoi complet avec nopartial et vérification checksumfile.
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
 
@@ -84,13 +83,12 @@ Note importante sur le stockage : les téléchargements manuels sont enregistré
 - Les transferts Yandex vers Dropbox, OneDrive et pCloud utilisent leurs API officielles via un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Dropbox et OneDrive disposent d'une file WorkManager avec reprise de session et vérification de l'intégrité distante lorsqu'un hash est fourni. pCloud dispose d'un worker persistant avec suivi uploadprogress et vérification checksumfile ; après interruption, il recommence l'envoi complet car l'API officielle ne fournit pas d'offset de reprise documenté. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
 - Android n'autorise pas l'accès arbitraire au cache privé d'autres applications.
 
-## Résolution Bypass.vip / Bypass.city
+## Résolution Bypass.city
 
 Les deux services demandés sont référencés pour la résolution des liens publicitaires :
-- Bypass.vip : https://bypass.vip/ (l'accès à son API premium nécessite un accès/API key selon ses conditions).
 - Bypass.city : https://bypass.city/ et liste des sites pris en charge : https://bypass.city/supported.
 
-Bypass.city est appelé depuis l'interface native via son API : l'application lit son schéma OpenAPI avant d'envoyer une requête, applique une temporisation conservatrice et refuse l'appel si les champs requis ne sont pas documentés ou nécessitent des paramètres non configurés. Bypass.vip dispose d'une API Premium soumise à clé et à conditions d'utilisation ; l'intégration attend une documentation technique et une clé autorisée. Les pages nécessitant CAPTCHA, anti-bot, connexion ou validation humaine ne sont pas contournées.
+Bypass.city est appelé depuis l'interface native via son API : l'application lit son schéma OpenAPI avant d'envoyer une requête, applique une temporisation conservatrice et refuse l'appel si les champs requis ne sont pas documentés ou nécessitent des paramètres non configurés. Aucun CAPTCHA, anti-bot, paiement, contrôle d'accès ou validation humaine n'est contourné.
 
 ## Références techniques
 
