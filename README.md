@@ -19,7 +19,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Pagination des dossiers (jusqu'à 10 000 éléments par parcours).
 - Téléchargement d'un dossier complet sous forme d'archive ZIP.
 - File de transferts persistante via WorkManager et DownloadManager : notifications système, reprise réseau gérée par Android, contrôle de taille et comparaison MD5 lorsque Yandex fournit cette empreinte ; SHA-256 local conservé dans le résultat.
-- File cloud persistante Dropbox via WorkManager : reprise des sessions d'envoi au dernier bloc confirmé, contrôle du MD5 source et vérification du content_hash distant Dropbox.
+- Files cloud persistantes Dropbox et OneDrive via WorkManager : reprise des sessions d'envoi au dernier offset confirmé, contrôle du MD5 source, taille distante et hash distant lorsque le fournisseur le renvoie.
 - Noms de fichiers nettoyés avant enregistrement.
 - Gestion des erreurs HTTP et messages renvoyés par Yandex.
 - Compilation APK debug via GitHub Actions.
@@ -60,7 +60,7 @@ Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Intégration Bypass.vip : nécessite la documentation et l'accès API Premium autorisé.
-- File cloud persistante avec reprise et vérification distante pour OneDrive et pCloud ; Dropbox dispose maintenant d'un worker dédié.
+- File cloud persistante avec reprise et vérification distante pour pCloud ; Dropbox et OneDrive disposent maintenant de workers dédiés.
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
 
 Note importante sur le stockage : les téléchargements manuels sont enregistrés dans Téléchargements/YandexDown via le service Android. Les transferts directs Yandex vers Google Drive ou Yandex Disk ne créent pas de fichier permanent local. Le mode cloud-only par défaut pour toutes les opérations reste à finaliser.
@@ -80,7 +80,7 @@ Note importante sur le stockage : les téléchargements manuels sont enregistré
 - Les raccourcisseurs qui redirigent directement en HTTP(S) sont suivis ; les pages intermédiaires nécessitant JavaScript peuvent nécessiter une action humaine.
 - Aucun CAPTCHA, paiement, contrôle anti-robot ou contrôle d'accès n'est contourné.
 - Les jetons Yandex et Google sont chiffrés avec Android Keystore. Les jetons d'accès Google sont de courte durée et peuvent devoir être renouvelés.
-- Les transferts Yandex vers Dropbox, OneDrive et pCloud utilisent leurs API officielles via un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Dropbox dispose d'une file WorkManager avec reprise de session et vérification du hash distant. Les transferts OneDrive et pCloud restent synchrones à ce stade. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
+- Les transferts Yandex vers Dropbox, OneDrive et pCloud utilisent leurs API officielles via un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Dropbox et OneDrive disposent d'une file WorkManager avec reprise de session et vérification de l'intégrité distante lorsqu'un hash est fourni. pCloud reste synchrone à ce stade. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
 - Android n'autorise pas l'accès arbitraire au cache privé d'autres applications.
 
 ## Résolution Bypass.vip / Bypass.city
@@ -98,6 +98,7 @@ Bypass.city est appelé depuis l'interface native via son API : l'application li
 - Android WorkManager: https://developer.android.com/topic/libraries/architecture/workmanager
 - Android Storage Access Framework: https://developer.android.com/training/data-storage/shared/documents-files
 - Google Drive API: https://developers.google.com/drive/api/guides/manage-uploads
+- Microsoft Graph — Upload sessions: https://learn.microsoft.com/graph/api/driveitem-createuploadsession
 - Dropbox API v2 — Upload sessions: https://docs.dropboxapi.com/dropbox-api/api-reference/user-endpoints/files/upload-session-start
 - Dropbox API: https://www.dropbox.com/developers/documentation/http/documentation
 - Android WorkManager: https://developer.android.com/topic/libraries/architecture/workmanager

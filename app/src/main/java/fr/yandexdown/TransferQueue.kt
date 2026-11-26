@@ -72,6 +72,12 @@ internal fun cancelPersistentDownload(context: Context, workId: UUID) {
         }
         prefs.edit().remove(key).apply()
     }
+    TokenVault.clear(context, "onedrive_upload_url_$key")
+    prefs.edit()
+        .remove("onedrive_offset_$key")
+        .remove("dropbox_session_$key")
+        .remove("dropbox_offset_$key")
+        .apply()
     WorkManager.getInstance(context).cancelWorkById(workId)
 }
 

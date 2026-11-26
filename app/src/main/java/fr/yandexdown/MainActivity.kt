@@ -684,7 +684,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                                 val remoteSizeVerified = transfer.outputData.getBoolean("destination_size_verified", false)
                                                 val remoteHashVerified = transfer.outputData.getBoolean("destination_hash_verified", false)
                                                 val integrityLabel = when {
-                                                    remoteHashVerified -> "Hash distant Dropbox confirmé · taille distante validée"
+                                                    remoteHashVerified -> "Hash distant confirmé · taille distante validée"
                                                     remoteSizeVerified -> "Taille distante validée · hash distant indisponible"
                                                     verified -> "MD5 source validé · SHA-256 calculé"
                                                     else -> "Taille contrôlée · SHA-256 calculé"
@@ -792,6 +792,18 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 selected = null
                             }
                         }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer directement vers OneDrive") }
+                    }
+                    if (publicKey.isNotBlank() && oneDriveToken.isNotBlank() && selected!!.type == "file") {
+                        OutlinedButton(
+                            enabled = !busy,
+                            onClick = {
+                                val item = selected!!
+                                val id = enqueuePersistentOneDriveTransfer(context, publicKey, item)
+                                status = "Transfert OneDrive ajouté à la file persistante (ID ${id.toString().take(8)})."
+                                showTransferQueue = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Ajouter OneDrive à la file persistante") }
                     }
                     if (publicKey.isNotBlank() && pCloudToken.isNotBlank() && selected!!.type == "file") {
                         Button(enabled = !busy, onClick = {
