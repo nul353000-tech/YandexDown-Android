@@ -94,59 +94,6 @@ private data class DiskItem(val name: String, val path: String, val type: String
 @Composable
 fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: String = "", oauthCallback: String = "") {
     var link by remember { mutableStateOf(initialLink.ifBlank { clipboardLink }) }
-    LaunchedEffect(oauthCallback) {
-        if (oauthCallback.isNotBlank()) {
-            runTask("Finalisation de la connexion cloud…") {
-                val callback = Uri.parse(oauthCallback)
-                val provider = callback.lastPathSegment.orEmpty()
-                val prefs = context.getSharedPreferences("oauth", Context.MODE_PRIVATE)
-                val state = callback.getQueryParameter("state")
-                    ?: callback.fragment?.let { Uri.parse("https://callback.invalid/?$it").getQueryParameter("state") }
-                val expected = prefs.getString("${provider}_state", null)
-                require(!expected.isNullOrBlank() && state == expected) { "Vérification OAuth échouée (state invalide). Recommence la connexion." }
-                when (provider) {
-                    "dropbox" -> {
-                        val code = callback.getQueryParameter("code") ?: error("Code Dropbox absent.")
-                        val verifier = prefs.getString("dropbox_verifier", null) ?: error("Code PKCE Dropbox absent.")
-                        val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "").orEmpty()
-                        val token = withContext(Dispatchers.IO) { exchangeOAuthCode("https://api.dropboxapi.com/oauth2/token", clientId, "yandexdown://oauth/dropbox", code, verifier) }
-                        TokenVault.write(context, "dropbox_access_token", token.optString("access_token"))
-                        TokenVault.write(context, "dropbox_refresh_token", token.optString("refresh_token"))
-                        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
-                            .putLong("dropbox_expiry", System.currentTimeMillis() + token.optLong("expires_in", 14400L) * 1000L).apply()
-                        dropboxToken = token.optString("access_token")
-                    }
-                    "onedrive" -> {
-                        val code = callback.getQueryParameter("code") ?: error("Code Microsoft absent.")
-                        val verifier = prefs.getString("onedrive_verifier", null) ?: error("Code PKCE Microsoft absent.")
-                        val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "").orEmpty()
-                        val token = withContext(Dispatchers.IO) { exchangeOAuthCode("https://login.microsoftonline.com/common/oauth2/v2.0/token", clientId, "yandexdown://oauth/onedrive", code, verifier) }
-                        TokenVault.write(context, "onedrive_access_token", token.optString("access_token"))
-                        TokenVault.write(context, "onedrive_refresh_token", token.optString("refresh_token"))
-                        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
-                            .putLong("onedrive_expiry", System.currentTimeMillis() + token.optLong("expires_in", 3600L) * 1000L).apply()
-                        oneDriveToken = token.optString("access_token")
-                    }
-                    "pcloud" -> {
-                        val fragment = callback.fragment ?: error("Réponse pCloud absente.")
-                        val params = Uri.parse("https://callback.invalid/?$fragment")
-                        val token = params.getQueryParameter("access_token") ?: error("Jeton pCloud absent.")
-                        val hostname = params.getQueryParameter("hostname")?.lowercase()
-                            ?.takeIf { it == "api.pcloud.com" || it == "eapi.pcloud.com" }
-                            ?: "eapi.pcloud.com"
-                        TokenVault.write(context, "pcloud_access_token", token)
-                        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("pcloud_host", hostname).apply()
-                        pCloudToken = token
-                        pCloudHost = hostname
-                    }
-                    else -> error("Fournisseur OAuth inconnu.")
-                }
-                prefs.edit().remove("${provider}_state").remove("${provider}_verifier").apply()
-                status = "Connexion $provider terminée. Le jeton est chiffré sur cet appareil."
-            }
-        }
-    }
-
     LaunchedEffect(initialLink, clipboardLink) {
         val suggested = initialLink.ifBlank { clipboardLink }
         if (suggested.isNotBlank() && (link.isBlank() || !isYandexLink(link))) link = suggested
@@ -228,18 +175,6 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             }
     }
 
-    fun connectDropbox() {
-        saveProviderSetting("dropbox_client_id", dropboxClientId)
-        launchOAuth("dropbox", dropboxClientId, "https://www.dropbox.com/oauth2/authorize")
-    }
-    fun connectOneDrive() {
-        saveProviderSetting("onedrive_client_id", oneDriveClientId)
-        launchOAuth("onedrive", oneDriveClientId, "https://login.microsoftonline.com", "offline_access Files.ReadWrite User.Read")
-    }
-    fun connectPCloud() {
-        saveProviderSetting("pcloud_client_id", pCloudClientId)
-        launchOAuth("pcloud", pCloudClientId, "https://my.pcloud.com/oauth2/authorize")
-    }
     fun saveProviderSetting(key: String, value: String) {
         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString(key, value.trim()).apply()
     }
@@ -263,6 +198,19 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
         }
         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
+    fun connectDropbox() {
+        saveProviderSetting("dropbox_client_id", dropboxClientId)
+        launchOAuth("dropbox", dropboxClientId, "https://www.dropbox.com/oauth2/authorize")
+    }
+    fun connectOneDrive() {
+        saveProviderSetting("onedrive_client_id", oneDriveClientId)
+        launchOAuth("onedrive", oneDriveClientId, "https://login.microsoftonline.com", "offline_access Files.ReadWrite User.Read")
+    }
+    fun connectPCloud() {
+        saveProviderSetting("pcloud_client_id", pCloudClientId)
+        launchOAuth("pcloud", pCloudClientId, "https://my.pcloud.com/oauth2/authorize")
+    }
+
     fun runTask(message: String, task: suspend () -> Unit) {
         scope.launch {
             busy = true
@@ -272,6 +220,60 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             } finally { busy = false }
         }
     }
+
+    LaunchedEffect(oauthCallback) {
+        if (oauthCallback.isNotBlank()) {
+            runTask("Finalisation de la connexion cloud…") {
+                val callback = Uri.parse(oauthCallback)
+                val provider = callback.lastPathSegment.orEmpty()
+                val prefs = context.getSharedPreferences("oauth", Context.MODE_PRIVATE)
+                val state = callback.getQueryParameter("state")
+                    ?: callback.fragment?.let { Uri.parse("https://callback.invalid/?$it").getQueryParameter("state") }
+                val expected = prefs.getString("${provider}_state", null)
+                require(!expected.isNullOrBlank() && state == expected) { "Vérification OAuth échouée (state invalide). Recommence la connexion." }
+                when (provider) {
+                    "dropbox" -> {
+                        val code = callback.getQueryParameter("code") ?: error("Code Dropbox absent.")
+                        val verifier = prefs.getString("dropbox_verifier", null) ?: error("Code PKCE Dropbox absent.")
+                        val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "").orEmpty()
+                        val token = withContext(Dispatchers.IO) { exchangeOAuthCode("https://api.dropboxapi.com/oauth2/token", clientId, "yandexdown://oauth/dropbox", code, verifier) }
+                        TokenVault.write(context, "dropbox_access_token", token.optString("access_token"))
+                        TokenVault.write(context, "dropbox_refresh_token", token.optString("refresh_token"))
+                        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+                            .putLong("dropbox_expiry", System.currentTimeMillis() + token.optLong("expires_in", 14400L) * 1000L).apply()
+                        dropboxToken = token.optString("access_token")
+                    }
+                    "onedrive" -> {
+                        val code = callback.getQueryParameter("code") ?: error("Code Microsoft absent.")
+                        val verifier = prefs.getString("onedrive_verifier", null) ?: error("Code PKCE Microsoft absent.")
+                        val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "").orEmpty()
+                        val token = withContext(Dispatchers.IO) { exchangeOAuthCode("https://login.microsoftonline.com/common/oauth2/v2.0/token", clientId, "yandexdown://oauth/onedrive", code, verifier) }
+                        TokenVault.write(context, "onedrive_access_token", token.optString("access_token"))
+                        TokenVault.write(context, "onedrive_refresh_token", token.optString("refresh_token"))
+                        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+                            .putLong("onedrive_expiry", System.currentTimeMillis() + token.optLong("expires_in", 3600L) * 1000L).apply()
+                        oneDriveToken = token.optString("access_token")
+                    }
+                    "pcloud" -> {
+                        val fragment = callback.fragment ?: error("Réponse pCloud absente.")
+                        val params = Uri.parse("https://callback.invalid/?$fragment")
+                        val token = params.getQueryParameter("access_token") ?: error("Jeton pCloud absent.")
+                        val hostname = params.getQueryParameter("hostname")?.lowercase()
+                            ?.takeIf { it == "api.pcloud.com" || it == "eapi.pcloud.com" }
+                            ?: "eapi.pcloud.com"
+                        TokenVault.write(context, "pcloud_access_token", token)
+                        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("pcloud_host", hostname).apply()
+                        pCloudToken = token
+                        pCloudHost = hostname
+                    }
+                    else -> error("Fournisseur OAuth inconnu.")
+                }
+                prefs.edit().remove("${provider}_state").remove("${provider}_verifier").apply()
+                status = "Connexion $provider terminée. Le jeton est chiffré sur cet appareil."
+            }
+        }
+    }
+
 
     LaunchedEffect(initialLink, clipboardLink) {
         val candidate = when {
