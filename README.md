@@ -5,6 +5,9 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 ## Fonctionnalités présentes
 
 - Interface française claire.
+- Import d'un lien depuis le presse-papiers à l'ouverture (détection au premier plan) et bouton Coller.
+- Réception des liens partagés depuis les autres applications Android.
+- Saisie manuelle toujours disponible.
 - Validation des liens HTTPS Yandex Disk.
 - Lecture des métadonnées via l'API officielle Yandex Disk.
 - Affichage des fichiers et dossiers partagés.
