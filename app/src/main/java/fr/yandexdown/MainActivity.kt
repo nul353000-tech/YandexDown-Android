@@ -616,7 +616,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                     verticalArrangement = Arrangement.spacedBy(4.dp)
                                 ) {
                                     items(transferQueue, key = { it.id }) { transfer ->
-                                        val name = transfer.inputData.getString("name") ?: "Fichier"
+                                        val name = persistentDownloadName(context, transfer.id)
                                         val downloaded = transfer.progress.getLong("downloaded_bytes", 0L)
                                         val total = transfer.progress.getLong("total_bytes", 0L)
                                         val finished = transfer.state == WorkInfo.State.SUCCEEDED ||

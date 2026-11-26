@@ -48,9 +48,16 @@ internal fun enqueuePersistentDownload(
         .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
         .addTag(TRANSFER_QUEUE_TAG)
         .build()
+    context.getSharedPreferences(TRANSFER_PREFS, Context.MODE_PRIVATE).edit()
+        .putString("name_${request.id}", item.name)
+        .apply()
     WorkManager.getInstance(context).enqueue(request)
     return request.id
 }
+
+internal fun persistentDownloadName(context: Context, workId: UUID): String =
+    context.getSharedPreferences(TRANSFER_PREFS, Context.MODE_PRIVATE)
+        .getString("name_$workId", null) ?: "Fichier"
 
 internal fun cancelPersistentDownload(context: Context, workId: UUID) {
     val key = workId.toString()
