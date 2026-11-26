@@ -82,11 +82,18 @@ def google_folder(token, name, parent):
     return r.json()["id"]
 
 
-def upload_google(token, root, rel, file_path):
+def upload_google(token, root, rel, file_path, folder_cache):
     parts = [safe_name(p) for p in PurePosixPath(rel).parts if p not in ("", ".", "..")]
-    parent = None
+    parent = folder_cache.get("")
+    if parent is None:
+        parent = google_folder(token, safe_name(root), None)
+        folder_cache[""] = parent
+    current = ""
     for folder in parts[:-1]:
-        parent = google_folder(token, folder, parent)
+        current = current + "/" + folder
+        if current not in folder_cache:
+            folder_cache[current] = google_folder(token, folder, parent)
+        parent = folder_cache[current]
     name = parts[-1]
     metadata = {"name": name}
     if parent:
@@ -213,7 +220,7 @@ def extract_archive(payload: ExtractRequest, request: Request):
                     mode = (entry.external_attr >> 16) & 0o170000
                     if mode == 0o120000:
                         raise HTTPException(400, "Les liens symboliques dans les ZIP sont refusés.")
-                    raw = entry.filename.replace("\\\\", "/")
+                    raw = entry.filename.replace("\\", "/")
                     parts = PurePosixPath(raw).parts
                     if not parts or raw.startswith("/") or any(p in ("..", "") for p in parts):
                         raise HTTPException(400, "Chemin dangereux détecté dans le ZIP.")
@@ -237,9 +244,10 @@ def extract_archive(payload: ExtractRequest, request: Request):
             raise HTTPException(400, "Archive chiffrée ou mot de passe requis.") from error
         if not files:
             raise HTTPException(400, "Aucun fichier à extraire dans cette archive.")
+        google_folders = {}
         for rel, local in files:
             if provider == "google drive":
-                upload_google(payload.access_token, root, rel, local)
+                upload_google(payload.access_token, root, rel, local, google_folders)
             elif provider == "dropbox":
                 upload_dropbox(payload.access_token, root, rel, local)
             elif provider == "onedrive":
