@@ -15,6 +15,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Parcours et téléchargements de fichiers privés Yandex après autorisation.
 - Transfert direct sans fichier temporaire d'un fichier public Yandex vers le Yandex Disk privé connecté.
 - Affichage des fichiers et dossiers partagés.
+- Prise en charge sans liste blanche d’extensions : tous les fichiers renvoyés par Yandex Disk sont affichés, notamment les vidéos (MP4, MKV, AVI, MOV, WebM, etc.) et les archives (ZIP, RAR, 7Z, TAR, GZ, BZ2, XZ, ISO, etc.). Les transferts utilisent un flux binaire générique afin de ne pas refuser les extensions inconnues ; les limites de taille et les règles propres à chaque fournisseur cloud restent applicables.
 - Navigation dans les sous-dossiers.
 - Pagination des dossiers (jusqu'à 10 000 éléments par parcours).
 - Téléchargement d'un dossier complet sous forme d'archive ZIP.
@@ -78,6 +79,7 @@ Note importante sur le stockage : les téléchargements manuels sont enregistré
 - L'accès privé nécessite l'authentification légitime du propriétaire du compte et les autorisations correspondantes.
 - Un mot de passe de partage est différent du mot de passe du compte.
 - Les raccourcisseurs qui redirigent directement en HTTP(S) sont suivis ; les pages intermédiaires nécessitant JavaScript peuvent nécessiter une action humaine.
+- Les fichiers vidéo et archives ne sont pas filtrés par extension : les formats courants et inconnus sont transmis comme données binaires. La prise en charge effective d’un format dépend ensuite du service cloud destinataire, de ses limites de taille et de ses propres règles.
 - Aucun CAPTCHA, paiement, contrôle anti-robot ou contrôle d'accès n'est contourné.
 - Les jetons Yandex et Google sont chiffrés avec Android Keystore. Les jetons d'accès Google sont de courte durée et peuvent devoir être renouvelés.
 - Les transferts Yandex vers Dropbox, OneDrive et pCloud utilisent leurs API officielles via un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Dropbox et OneDrive disposent d'une file WorkManager avec reprise de session et vérification de l'intégrité distante lorsqu'un hash est fourni. pCloud dispose d'un worker persistant avec suivi uploadprogress et vérification checksumfile ; après interruption, il recommence l'envoi complet car l'API officielle ne fournit pas d'offset de reprise documenté. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
