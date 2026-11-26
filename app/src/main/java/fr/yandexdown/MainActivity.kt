@@ -335,7 +335,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                     modifier = Modifier.weight(1f)
                                 ) { Text("Voir les sites pris en charge") }
                             }
-                            Text("Les résolveurs nécessitant une API privée, une clé, un CAPTCHA ou une validation sur leur service ne sont pas simulés : ils seront activés dans l’application quand leur protocole officiel sera vérifié.", style = MaterialTheme.typography.labelSmall)
+                            Text("Les autres services nécessitant une clé API, une validation humaine ou un protocole non documenté restent désactivés jusqu’à une intégration officielle vérifiée. Aucun CAPTCHA n’est contourné.", style = MaterialTheme.typography.labelSmall)
                         }
                     }
                 }
@@ -718,8 +718,9 @@ private fun resolveWithBypassCity(input: String): String {
         lastBypassCityRequestAt = now
     }
     val parsedInput = Uri.parse(input)
-    require(parsedInput.scheme == "https" && !parsedInput.host.isNullOrBlank()) {
-        "Entre un lien HTTPS valide."
+    val inputHost = parsedInput.host?.lowercase().orEmpty()
+    require(parsedInput.scheme == "https" && isKnownResolverHost(inputHost)) {
+        "Ce domaine n’est pas dans la liste des services de liens pris en charge."
     }
     val specResponse = http.newCall(
         Request.Builder().url("https://api2.adbypass.org/api-json").header("Accept", "application/json").get().build()
@@ -807,8 +808,8 @@ private fun resolveOrdinaryRedirect(input: String): String {
     val uri = Uri.parse(input)
     require(uri.scheme == "https" && !uri.host.isNullOrBlank()) { "Entre une adresse HTTPS valide." }
     val host = uri.host!!.lowercase()
-    require(host !in setOf("localhost", "127.0.0.1", "0.0.0.0") && !host.endsWith(".local")) {
-        "Cette adresse locale n’est pas autorisée."
+    require(isKnownResolverHost(host)) {
+        "Ce domaine n’est pas dans la liste des raccourcisseurs pris en charge."
     }
     val request = Request.Builder().url(input).header("User-Agent", "YandexDown-Android/1.0").get().build()
     http.newCall(request).execute().use { response ->
@@ -834,6 +835,16 @@ private fun checkBypassCityApi(): Pair<String, String> {
     val catalog = get("list")
     return "API accessible" to catalog.take(5000).ifBlank { available.take(5000) }
 }
+
+private val supportedResolverDomains = setOf(
+    "bit.ly", "tinyurl.com", "rebrand.ly", "cutt.ly", "t.ly", "is.gd", "shorturl.at", "rb.gy",
+    "linkvertise.com", "linkvertise.net", "link-to.net", "link-center.net", "link-target.net",
+    "loot-link.com", "loot-links.com", "lootlink.org", "lootlinks.co", "lootdest.org", "lootdest.info",
+    "work.ink", "cuty.io", "boost.ink", "adfoc.us", "rekonise.com", "paster.so", "paster.gg"
+)
+
+private fun isKnownResolverHost(host: String): Boolean =
+    supportedResolverDomains.any { host == it || host.endsWith(".$it") }
 
 private val supportedShorteners = setOf(
     "bit.ly", "tinyurl.com", "rebrand.ly", "cutt.ly", "t.ly", "is.gd", "shorturl.at", "rb.gy"
