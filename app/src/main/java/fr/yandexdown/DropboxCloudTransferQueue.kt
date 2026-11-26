@@ -350,3 +350,42 @@ private fun JSONObject.toDropboxHeaderValue(): String = buildString {
 
 private fun ByteArray.toHex(): String =
     joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
+
+
+internal class DropboxContentHash {
+    companion object {
+        private const val BLOCK_SIZE = 4 * 1024 * 1024
+    }
+
+    private val blockDigest = MessageDigest.getInstance("SHA-256")
+    private val fileDigest = MessageDigest.getInstance("SHA-256")
+    private var blockBytes = 0
+    private var finished = false
+
+    fun update(data: ByteArray, offset: Int = 0, length: Int = data.size) {
+        check(!finished) { "Le hash Dropbox est déjà finalisé." }
+        require(offset >= 0 && length >= 0 && offset + length <= data.size) {
+            "Plage de données invalide."
+        }
+        var position = offset
+        var remaining = length
+        while (remaining > 0) {
+            val count = minOf(remaining, BLOCK_SIZE - blockBytes)
+            blockDigest.update(data, position, count)
+            position += count
+            remaining -= count
+            blockBytes += count
+            if (blockBytes == BLOCK_SIZE) {
+                fileDigest.update(blockDigest.digest())
+                blockBytes = 0
+            }
+        }
+    }
+
+    fun finish(): String {
+        check(!finished) { "Le hash Dropbox est déjà finalisé." }
+        if (blockBytes > 0) fileDigest.update(blockDigest.digest())
+        finished = true
+        return fileDigest.digest().toHex()
+    }
+}
