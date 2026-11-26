@@ -815,6 +815,18 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             }
                         }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer directement vers pCloud") }
                     }
+                    if (publicKey.isNotBlank() && pCloudToken.isNotBlank() && selected!!.type == "file") {
+                        OutlinedButton(
+                            enabled = !busy,
+                            onClick = {
+                                val item = selected!!
+                                val id = enqueuePersistentPCloudTransfer(context, publicKey, item)
+                                status = "Transfert pCloud ajouté à la file persistante (ID ${id.toString().take(8)})."
+                                showTransferQueue = true
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Ajouter pCloud à la file persistante") }
+                    }
                     if (publicKey.isNotBlank() && googleDriveToken.isNotBlank() && selected!!.type == "file") {
                         Button(
                             enabled = !busy,

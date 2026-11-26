@@ -60,7 +60,7 @@ Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Intégration Bypass.vip : nécessite la documentation et l'accès API Premium autorisé.
-- File cloud persistante avec reprise et vérification distante pour pCloud ; Dropbox et OneDrive disposent maintenant de workers dédiés.
+- File cloud persistante avec reprise de session Dropbox/OneDrive et transfert pCloud persistant avec progression API et contrôle checksumfile (reprise pCloud par réenvoi complet, l'API ne documente pas de reprise par offset).
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
 
 Note importante sur le stockage : les téléchargements manuels sont enregistrés dans Téléchargements/YandexDown via le service Android. Les transferts directs Yandex vers Google Drive ou Yandex Disk ne créent pas de fichier permanent local. Le mode cloud-only par défaut pour toutes les opérations reste à finaliser.
@@ -80,7 +80,7 @@ Note importante sur le stockage : les téléchargements manuels sont enregistré
 - Les raccourcisseurs qui redirigent directement en HTTP(S) sont suivis ; les pages intermédiaires nécessitant JavaScript peuvent nécessiter une action humaine.
 - Aucun CAPTCHA, paiement, contrôle anti-robot ou contrôle d'accès n'est contourné.
 - Les jetons Yandex et Google sont chiffrés avec Android Keystore. Les jetons d'accès Google sont de courte durée et peuvent devoir être renouvelés.
-- Les transferts Yandex vers Dropbox, OneDrive et pCloud utilisent leurs API officielles via un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Dropbox et OneDrive disposent d'une file WorkManager avec reprise de session et vérification de l'intégrité distante lorsqu'un hash est fourni. pCloud reste synchrone à ce stade. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
+- Les transferts Yandex vers Dropbox, OneDrive et pCloud utilisent leurs API officielles via un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Dropbox et OneDrive disposent d'une file WorkManager avec reprise de session et vérification de l'intégrité distante lorsqu'un hash est fourni. pCloud dispose d'un worker persistant avec suivi uploadprogress et vérification checksumfile ; après interruption, il recommence l'envoi complet car l'API officielle ne fournit pas d'offset de reprise documenté. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
 - Android n'autorise pas l'accès arbitraire au cache privé d'autres applications.
 
 ## Résolution Bypass.vip / Bypass.city

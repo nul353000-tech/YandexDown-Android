@@ -77,6 +77,7 @@ internal fun cancelPersistentDownload(context: Context, workId: UUID) {
         .remove("onedrive_offset_$key")
         .remove("dropbox_session_$key")
         .remove("dropbox_offset_$key")
+        .remove("pcloud_progress_hash_$key")
         .apply()
     WorkManager.getInstance(context).cancelWorkById(workId)
 }
