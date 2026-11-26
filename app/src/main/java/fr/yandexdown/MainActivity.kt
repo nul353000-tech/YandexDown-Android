@@ -34,6 +34,13 @@ import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
     private var clipboardLink by mutableStateOf("")
+    private var sharedLink by mutableStateOf("")
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sharedLink = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+    }
 
     override fun onResume() {
         super.onResume()
@@ -45,8 +52,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val sharedText = intent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
-        setContent { YandexDownScreen(applicationContext, sharedText, clipboardLink) }
+        sharedLink = intent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        setContent { YandexDownScreen(applicationContext, sharedLink, clipboardLink) }
     }
 }
 
