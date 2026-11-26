@@ -207,7 +207,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 onClick = {
                                     context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("yandex_client_id", yandexClientId.trim()).apply()
                                     val authUrl = "https://oauth.yandex.com/authorize?response_type=token&client_id=${enc(yandexClientId.trim())}&redirect_uri=${enc("https://oauth.yandex.com/verification_code")}"
-                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authUrl)))
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authUrl)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) { Text("Autoriser Yandex dans le navigateur") }
