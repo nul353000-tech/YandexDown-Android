@@ -91,6 +91,11 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var yandexToken by remember { mutableStateOf(TokenVault.read(context, "yandex_token")) }
     var tokenEntry by remember { mutableStateOf("") }
     var showAccountSettings by remember { mutableStateOf(false) }
+    var showLinkTools by remember { mutableStateOf(true) }
+    var resolverInput by remember { mutableStateOf("") }
+    var resolverOutput by remember { mutableStateOf("") }
+    var bypassCityStatus by remember { mutableStateOf("Non vérifié") }
+    var bypassCityCatalog by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     fun runTask(message: String, task: suspend () -> Unit) {
@@ -187,6 +192,78 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Text("Analyser / afficher le contenu")
                 }
+                }
+                OutlinedButton(onClick = { showLinkTools = !showLinkTools }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (showLinkTools) "Masquer les outils de liens" else "Outils de liens intégrés")
+                }
+                if (showLinkTools) {
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Résolveur intégré", style = MaterialTheme.typography.titleMedium)
+                            Text("Interface native : colle un lien, identifie le service et suis les redirections HTTP simples sans ouvrir un site dans le navigateur.", style = MaterialTheme.typography.bodySmall)
+                            OutlinedTextField(
+                                value = resolverInput,
+                                onValueChange = { resolverInput = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Lien à analyser") },
+                                singleLine = true
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        resolverInput = clipboard.primaryClip?.takeIf { it.itemCount > 0 }
+                                            ?.getItemAt(0)?.coerceToText(context)?.toString()?.trim().orEmpty()
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Coller") }
+                                Button(
+                                    enabled = resolverInput.isNotBlank() && !busy,
+                                    onClick = {
+                                        runTask("Analyse et résolution de la redirection…") {
+                                            val result = withContext(Dispatchers.IO) { resolveOrdinaryRedirect(resolverInput.trim()) }
+                                            resolverOutput = result
+                                            status = "Redirection HTTP résolue. Vérifie l’adresse finale avant de l’utiliser."
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Résoudre") }
+                            }
+                            if (resolverOutput.isNotBlank()) {
+                                Text("Résultat", style = MaterialTheme.typography.labelLarge)
+                                SelectionContainer { Text(resolverOutput, style = MaterialTheme.typography.bodySmall) }
+                                TextButton(onClick = {
+                                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("Lien résolu", resolverOutput))
+                                    status = "Lien résolu copié."
+                                }) { Text("Copier le résultat") }
+                            }
+                            HorizontalDivider()
+                            Text("Services de résolution", style = MaterialTheme.typography.titleSmall)
+                            Text("Bypass.city · Linkvertise · Lootlinks · Work.ink · Cuty.io · Boost.ink · Adfoc.us · Rekonise", style = MaterialTheme.typography.bodySmall)
+                            Text("Bypass.city API : $bypassCityStatus", style = MaterialTheme.typography.bodySmall)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                OutlinedButton(
+                                    enabled = !busy,
+                                    onClick = {
+                                        runTask("Vérification de l’API Bypass.city…") {
+                                            val result = withContext(Dispatchers.IO) { checkBypassCityApi() }
+                                            bypassCityStatus = result.first
+                                            bypassCityCatalog = result.second
+                                            status = "Vérification Bypass.city terminée."
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Vérifier l’API") }
+                                OutlinedButton(
+                                    enabled = bypassCityCatalog.isNotBlank(),
+                                    onClick = { resolverOutput = bypassCityCatalog },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Voir les sites pris en charge") }
+                            }
+                            Text("Les résolveurs nécessitant une API privée, une clé, un CAPTCHA ou une validation sur leur service ne sont pas simulés : ils seront activés dans l’application quand leur protocole officiel sera vérifié.", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
                 }
                 OutlinedButton(onClick = { showAccountSettings = !showAccountSettings }, modifier = Modifier.fillMaxWidth()) {
                     Text(if (showAccountSettings) "Masquer les connexions" else "Comptes cloud et connexions")
@@ -476,6 +553,39 @@ private object TokenVault {
     fun clear(context: Context, name: String) {
         context.getSharedPreferences("secure_tokens", Context.MODE_PRIVATE).edit().remove(name).apply()
     }
+}
+
+
+private fun resolveOrdinaryRedirect(input: String): String {
+    val uri = Uri.parse(input)
+    require(uri.scheme == "https" && !uri.host.isNullOrBlank()) { "Entre une adresse HTTPS valide." }
+    val host = uri.host!!.lowercase()
+    require(host !in setOf("localhost", "127.0.0.1", "0.0.0.0") && !host.endsWith(".local")) {
+        "Cette adresse locale n’est pas autorisée."
+    }
+    val request = Request.Builder().url(input).header("User-Agent", "YandexDown-Android/1.0").get().build()
+    http.newCall(request).execute().use { response ->
+        require(response.isSuccessful) { "Le service a répondu HTTP ${response.code}. Les pages nécessitant une validation restent à confirmer sur leur service." }
+        val finalUrl = response.request.url.toString()
+        val finalUri = Uri.parse(finalUrl)
+        require(finalUri.scheme == "https" && !finalUri.host.isNullOrBlank()) { "La redirection finale n’est pas une adresse HTTPS sûre." }
+        return finalUrl
+    }
+}
+
+private fun checkBypassCityApi(): Pair<String, String> {
+    fun get(path: String): String {
+        val request = Request.Builder().url("https://api2.adbypass.org/api/$path")
+            .header("Accept", "application/json").get().build()
+        http.newCall(request).execute().use { response ->
+            val body = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw IllegalStateException("Bypass.city HTTP ${response.code}.")
+            return body
+        }
+    }
+    val available = get("available")
+    val catalog = get("list")
+    return "API accessible" to catalog.take(5000).ifBlank { available.take(5000) }
 }
 
 private val supportedShorteners = setOf(
