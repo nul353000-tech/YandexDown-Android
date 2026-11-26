@@ -2,6 +2,7 @@ package fr.yandexdown
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
@@ -32,10 +33,20 @@ import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
 
 class MainActivity : ComponentActivity() {
+    private var clipboardLink by mutableStateOf("")
+
+    override fun onResume() {
+        super.onResume()
+        val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        val candidate = clipboard.primaryClip?.takeIf { it.itemCount > 0 }
+            ?.getItemAt(0)?.coerceToText(this)?.toString()?.trim().orEmpty()
+        clipboardLink = candidate.takeIf { isYandexLink(it) }.orEmpty()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val sharedText = intent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
-        setContent { YandexDownScreen(applicationContext, sharedText) }
+        setContent { YandexDownScreen(applicationContext, sharedText, clipboardLink) }
     }
 }
 
@@ -49,8 +60,12 @@ private data class DiskItem(val name: String, val path: String, val type: String
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun YandexDownScreen(context: Context, initialLink: String = "") {
-    var link by remember { mutableStateOf(initialLink) }
+fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: String = "") {
+    var link by remember { mutableStateOf(initialLink.ifBlank { clipboardLink }) }
+    LaunchedEffect(initialLink, clipboardLink) {
+        val suggested = initialLink.ifBlank { clipboardLink }
+        if (suggested.isNotBlank() && (link.isBlank() || !isYandexLink(link))) link = suggested
+    }
     var publicKey by remember { mutableStateOf("") }
     var currentPath by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("YandexDown") }
@@ -84,6 +99,17 @@ fun YandexDownScreen(context: Context, initialLink: String = "") {
                 Modifier.fillMaxSize().padding(padding).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
+                if (clipboardLink.isNotBlank() && clipboardLink != link) {
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text("Lien Yandex détecté dans le presse-papiers", style = MaterialTheme.typography.titleSmall)
+                                Text(clipboardLink, maxLines = 1, style = MaterialTheme.typography.bodySmall)
+                            }
+                            TextButton(onClick = { link = clipboardLink }) { Text("Importer") }
+                        }
+                    }
+                }
                 OutlinedTextField(
                     value = link, onValueChange = { link = it },
                     modifier = Modifier.fillMaxWidth(),
@@ -91,9 +117,20 @@ fun YandexDownScreen(context: Context, initialLink: String = "") {
                     leadingIcon = { Icon(Icons.Default.Link, null) },
                     singleLine = true
                 )
-                Button(
-                    onClick = {
-                        runTask("Analyse du lien…") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = {
+                            val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                            val copied = clipboard.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)
+                                ?.coerceToText(context)?.toString()?.trim().orEmpty()
+                            if (isYandexLink(copied)) { link = copied; status = "Lien importé depuis le presse-papiers." }
+                            else status = "Aucun lien Yandex Disk valide dans le presse-papiers."
+                        },
+                        modifier = Modifier.weight(1f)
+                    ) { Text("Coller") }
+                    Button(
+                        onClick = {
+                            runTask("Analyse du lien…") {
                             val parsed = withContext(Dispatchers.IO) { inspectPublicLink(link.trim()) }
                             publicKey = link.trim()
                             currentPath = ""
@@ -104,8 +141,8 @@ fun YandexDownScreen(context: Context, initialLink: String = "") {
                         }
                     },
                     enabled = !busy && link.isNotBlank(),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
+                        modifier = Modifier.weight(1f)
+                    ) {
                     if (busy) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
                     else Text("Analyser / afficher le contenu")
                 }
@@ -182,6 +219,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "") {
         }
     }
 }
+
+private fun isYandexLink(value: String): Boolean =
+    value.startsWith("https://") && (value.contains("disk.yandex") || value.contains("yadi.sk"))
 
 private fun inspectPublicLink(url: String): Pair<String, List<DiskItem>> {
     require(url.startsWith("https://")) { "Utilise un lien HTTPS." }
