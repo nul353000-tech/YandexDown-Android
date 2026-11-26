@@ -196,6 +196,20 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 leadingContent = {
                                     Icon(if (item.type == "dir") Icons.Default.Folder else Icons.Default.InsertDriveFile, null)
                                 },
+                                trailingContent = {
+                                    if (item.type == "dir") {
+                                        TextButton(
+                                            enabled = !busy,
+                                            onClick = {
+                                                runTask("Préparation de l’archive du dossier…") {
+                                                    val url = withContext(Dispatchers.IO) { getDownloadUrl(publicKey, item.path) }
+                                                    val id = enqueueDownload(context, url, "${item.name}.zip")
+                                                    status = "Archive du dossier ajoutée aux téléchargements (ID $id)."
+                                                }
+                                            }
+                                        ) { Text("ZIP") }
+                                    }
+                                },
                                 modifier = Modifier.clickable {
                                     if (item.type == "dir") {
                                         runTask("Chargement du dossier…") {
