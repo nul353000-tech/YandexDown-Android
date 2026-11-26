@@ -228,6 +228,18 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             }
     }
 
+    fun connectDropbox() {
+        saveProviderSetting("dropbox_client_id", dropboxClientId)
+        launchOAuth("dropbox", dropboxClientId, "https://www.dropbox.com/oauth2/authorize")
+    }
+    fun connectOneDrive() {
+        saveProviderSetting("onedrive_client_id", oneDriveClientId)
+        launchOAuth("onedrive", oneDriveClientId, "https://login.microsoftonline.com", "offline_access Files.ReadWrite User.Read")
+    }
+    fun connectPCloud() {
+        saveProviderSetting("pcloud_client_id", pCloudClientId)
+        launchOAuth("pcloud", pCloudClientId, "https://my.pcloud.com/oauth2/authorize")
+    }
     fun saveProviderSetting(key: String, value: String) {
         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString(key, value.trim()).apply()
     }
@@ -452,6 +464,30 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 }
                             }
                             HorizontalDivider()
+                            Text("Dropbox", style = MaterialTheme.typography.titleMedium)
+                            Text(if (dropboxToken.isBlank()) "Non connecté" else "Connecté · transfert cloud activé", style = MaterialTheme.typography.bodySmall)
+                            OutlinedTextField(value = dropboxClientId, onValueChange = { dropboxClientId = it },
+                                modifier = Modifier.fillMaxWidth(), label = { Text("Dropbox App key") }, singleLine = true)
+                            Button(onClick = { connectDropbox() }, enabled = dropboxClientId.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth()) { Text("Connecter Dropbox (OAuth PKCE)") }
+                            HorizontalDivider()
+                            Text("OneDrive", style = MaterialTheme.typography.titleMedium)
+                            Text(if (oneDriveToken.isBlank()) "Non connecté" else "Connecté · transfert Graph activé", style = MaterialTheme.typography.bodySmall)
+                            OutlinedTextField(value = oneDriveClientId, onValueChange = { oneDriveClientId = it },
+                                modifier = Modifier.fillMaxWidth(), label = { Text("Microsoft Application (client) ID") }, singleLine = true)
+                            Button(onClick = { connectOneDrive() }, enabled = oneDriveClientId.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth()) { Text("Connecter OneDrive (OAuth PKCE)") }
+                            HorizontalDivider()
+                            Text("pCloud", style = MaterialTheme.typography.titleMedium)
+                            Text(if (pCloudToken.isBlank()) "Non connecté" else "Connecté · serveur $pCloudHost", style = MaterialTheme.typography.bodySmall)
+                            OutlinedTextField(value = pCloudClientId, onValueChange = { pCloudClientId = it },
+                                modifier = Modifier.fillMaxWidth(), label = { Text("pCloud App ID") }, singleLine = true)
+                            Button(onClick = { connectPCloud() }, enabled = pCloudClientId.isNotBlank(),
+                                modifier = Modifier.fillMaxWidth()) { Text("Connecter pCloud") }
+                            HorizontalDivider()
+                            Text("MEGA", style = MaterialTheme.typography.titleMedium)
+                            Text("Le SDK officiel MEGA est natif C++/JNI. Il doit être compilé et lié comme module Android dédié avant d'activer un transfert ; aucun faux bouton de connexion n'est affiché.", style = MaterialTheme.typography.bodySmall)
+                            HorizontalDivider()
                             Text("Yandex Disk privé", style = MaterialTheme.typography.titleMedium)
                             OutlinedTextField(
                                 value = yandexClientId,
@@ -521,6 +557,39 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Sélection : ${selected!!.name}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                         TextButton(onClick = { selected = null }) { Text("Fermer") }
+                    }
+                    if (publicKey.isNotBlank() && dropboxToken.isNotBlank() && selected!!.type == "file") {
+                        Button(enabled = !busy, onClick = {
+                            val item = selected!!
+                            runTask("Transfert direct vers Dropbox…") {
+                                val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "").orEmpty()
+                                val access = withContext(Dispatchers.IO) { refreshDropboxToken(context, clientId) }
+                                val result = withContext(Dispatchers.IO) { transferPublicToDropbox(publicKey, item, access) }
+                                dropboxToken = TokenVault.read(context, "dropbox_access_token")
+                                status = "Transfert Dropbox terminé : $result. Aucun fichier temporaire permanent sur le téléphone."
+                                selected = null
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer directement vers Dropbox") }
+                    }
+                    if (publicKey.isNotBlank() && oneDriveToken.isNotBlank() && selected!!.type == "file") {
+                        Button(enabled = !busy, onClick = {
+                            val item = selected!!
+                            runTask("Transfert direct vers OneDrive…") {
+                                val result = withContext(Dispatchers.IO) { transferPublicToOneDrive(publicKey, item, oneDriveToken) }
+                                status = "Transfert OneDrive terminé : $result. Aucun fichier temporaire permanent sur le téléphone."
+                                selected = null
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer directement vers OneDrive") }
+                    }
+                    if (publicKey.isNotBlank() && pCloudToken.isNotBlank() && selected!!.type == "file") {
+                        Button(enabled = !busy, onClick = {
+                            val item = selected!!
+                            runTask("Transfert direct vers pCloud…") {
+                                val result = withContext(Dispatchers.IO) { transferPublicToPCloud(publicKey, item, pCloudToken, pCloudHost) }
+                                status = "Transfert pCloud terminé : $result. Aucun fichier temporaire permanent sur le téléphone."
+                                selected = null
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer directement vers pCloud") }
                     }
                     if (publicKey.isNotBlank() && googleDriveToken.isNotBlank() && selected!!.type == "file") {
                         Button(
