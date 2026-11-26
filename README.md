@@ -7,6 +7,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Interface française claire.
 - Import d'un lien depuis le presse-papiers à l'ouverture (détection au premier plan) et bouton Coller.
 - Réception des liens partagés depuis les autres applications Android.
+- Résolution des redirections HTTP simples depuis Bitly, TinyURL, Rebrandly, Cuttly, T.ly, is.gd, shorturl.at et rb.gy vers un lien Yandex.
 - Saisie manuelle toujours disponible.
 - Validation des liens HTTPS Yandex Disk.
 - Lecture des métadonnées via l'API officielle Yandex Disk.
@@ -35,7 +36,7 @@ Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'
 - Flux OAuth Yandex entièrement intégré avec retour automatique dans l'application (l'identifiant d'application Yandex doit être créé et renseigné une fois ; cette version utilise le flux de jeton officiel avec collage du jeton retourné).
 - OAuth Google Drive et destination cloud sans stockage permanent sur le téléphone.
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
-- Résolution de raccourcisseurs / interstitiels tiers compatibles.
+- Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlabs, Work.ink et similaires.
 - File de transferts persistante, vérification d'intégrité et reprise applicative.
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
 
@@ -53,6 +54,7 @@ Note importante sur le stockage : cette version télécharge les fichiers dans T
 
 - L'accès privé nécessite l'authentification légitime du propriétaire du compte et les autorisations correspondantes.
 - Un mot de passe de partage est différent du mot de passe du compte.
+- Les raccourcisseurs qui redirigent directement en HTTP(S) sont suivis ; les pages intermédiaires nécessitant JavaScript peuvent nécessiter une action humaine.
 - Aucun CAPTCHA, paiement, contrôle anti-robot ou contrôle d'accès n'est contourné.
 - Les jetons OAuth devront être protégés avec Android Keystore et les flux OAuth recommandés.
 - Les API des fournisseurs déterminent si un transfert direct cloud-à-cloud est possible.
