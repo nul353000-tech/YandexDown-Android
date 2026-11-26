@@ -394,7 +394,7 @@ private fun transferPublicToPrivateYandex(publicKey: String, item: DiskItem, tok
             override fun contentType() = sourceBody.contentType()
             override fun contentLength() = sourceBody.contentLength()
             override fun writeTo(sink: okio.BufferedSink) {
-                sourceBody.byteStream().use { input -> sink.outputStream().use { output -> input.copyTo(output) } }
+                sourceBody.byteStream().use { input -> input.copyTo(sink.outputStream()) }
             }
         }
         val uploadRequest = Request.Builder().url(uploadUrl).put(uploadBody).build()
