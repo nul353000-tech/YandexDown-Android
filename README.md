@@ -29,15 +29,28 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 3. Télécharger l'artefact YandexDown-debug.
 4. Extraire l'archive ZIP et installer l'APK sur Android.
 
+## Fonctions natives ajoutées dans cette version
+
+- Écran natif « Outils de liens intégrés » : saisie, collage, résolution HTTP simple et copie du résultat sans ouvrir le navigateur.
+- Diagnostic natif de l'API Bypass.city : lecture de la disponibilité et du catalogue des services.
+- Résolution Bypass.city par API : l'application lit le schéma OpenAPI publié à l'exécution, vérifie le champ URL et les paramètres obligatoires, puis appelle uniquement l'opération documentée si le schéma est compatible.
+- Connexion Google Drive avec Google Identity Services et autorisation limitée à `drive.file`.
+- Transfert direct d'un fichier public Yandex Disk vers Google Drive via une session d'envoi Drive resumable, sans stockage permanent local.
+
+## Configuration Google Drive
+
+L'intégration Google Drive nécessite un projet Google Cloud avec l'API Drive activée et un client OAuth Android configuré pour le package `fr.yandexdown` et l'empreinte SHA-1 du certificat qui signe l'APK installé. L'utilisateur doit ensuite autoriser l'accès depuis l'écran natif « Comptes cloud et connexions ». Le jeton d'accès est chiffré localement avec Android Keystore ; il est de courte durée et peut devoir être renouvelé.
+
 ## Fonctions encore à développer
 
 Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'elles ne sont pas livrées et testées :
-- Transfert cloud-à-cloud vers Google Drive, Dropbox, OneDrive, MEGA et pCloud.
+- Transferts cloud-à-cloud vers Dropbox, OneDrive, MEGA et pCloud.
 - Transfert sans fichier temporaire depuis un lien Yandex public vers son propre Yandex Disk privé (le flux passe par la connexion réseau du téléphone, sans stockage permanent local).
 - Flux OAuth Yandex entièrement intégré avec retour automatique dans l'application (l'identifiant d'application Yandex doit être créé et renseigné une fois ; cette version utilise le flux de jeton officiel avec collage du jeton retourné).
 - OAuth Google Drive et destination cloud sans stockage permanent sur le téléphone.
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
-- Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlabs, Work.ink et similaires.
+- Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
+- Intégration Bypass.vip : nécessite la documentation et l'accès API Premium autorisé.
 - File de transferts persistante, vérification d'intégrité et reprise applicative.
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
 
