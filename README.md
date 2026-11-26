@@ -39,6 +39,15 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Connexion Google Drive avec Google Identity Services et autorisation limitée à `drive.file`.
 - Transfert direct d'un fichier public Yandex Disk vers Google Drive via une session d'envoi Drive resumable, sans stockage permanent local.
 
+## Configuration des fournisseurs cloud
+
+- **Google Drive** : créer un projet Google Cloud, activer Drive API et enregistrer le client OAuth Android associé au package fr.yandexdown et à l'empreinte SHA-1 du certificat de signature.
+- **Dropbox** : créer une application Dropbox, activer les scopes de contenu en écriture, enregistrer le redirect URI yandexdown://oauth/dropbox et saisir l'App key dans l'application. Le flux mobile utilise PKCE.
+- **OneDrive** : enregistrer une application dans Microsoft Entra, autoriser les comptes personnels et/ou professionnels nécessaires, ajouter le redirect URI mobile yandexdown://oauth/onedrive, accorder les permissions déléguées Files.ReadWrite et User.Read, puis saisir l'Application (client) ID.
+- **pCloud** : enregistrer une application pCloud, déclarer yandexdown://oauth/pcloud comme redirect URI et saisir l'App ID. Le serveur de données européen ou américain est choisi à partir de la réponse OAuth.
+
+Chaque utilisateur doit autoriser explicitement son compte dans le navigateur système. Les identifiants d'application sont propres au projet YandexDown et ne peuvent pas être devinés ni remplacés par de faux identifiants.
+
 ## Configuration Google Drive
 
 L'intégration Google Drive nécessite un projet Google Cloud avec l'API Drive activée et un client OAuth Android configuré pour le package `fr.yandexdown` et l'empreinte SHA-1 du certificat qui signe l'APK installé. L'utilisateur doit ensuite autoriser l'accès depuis l'écran natif « Comptes cloud et connexions ». Le jeton d'accès est chiffré localement avec Android Keystore ; il est de courte durée et peut devoir être renouvelé.
@@ -46,7 +55,7 @@ L'intégration Google Drive nécessite un projet Google Cloud avec l'API Drive a
 ## Fonctions encore à développer
 
 Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'elles ne sont pas livrées et testées :
-- Transferts cloud-à-cloud vers Dropbox, OneDrive, MEGA et pCloud.
+- Intégration du SDK MEGA officiel Android (SDK natif C++/JNI) et transfert cloud-to-cloud MEGA.
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Intégration Bypass.vip : nécessite la documentation et l'accès API Premium autorisé.
@@ -70,7 +79,7 @@ Note importante sur le stockage : les téléchargements manuels sont enregistré
 - Les raccourcisseurs qui redirigent directement en HTTP(S) sont suivis ; les pages intermédiaires nécessitant JavaScript peuvent nécessiter une action humaine.
 - Aucun CAPTCHA, paiement, contrôle anti-robot ou contrôle d'accès n'est contourné.
 - Les jetons Yandex et Google sont chiffrés avec Android Keystore. Les jetons d'accès Google sont de courte durée et peuvent devoir être renouvelés.
-- Les API des fournisseurs déterminent si un transfert direct cloud-à-cloud est possible.
+- Les transferts Yandex vers Dropbox, OneDrive et pCloud passent par un relais réseau dans l'application ; les octets ne sont pas conservés dans un fichier local permanent. Le SDK MEGA doit être compilé et lié nativement avant d'activer ce fournisseur.
 - Android n'autorise pas l'accès arbitraire au cache privé d'autres applications.
 
 ## Résolution Bypass.vip / Bypass.city
