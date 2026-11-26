@@ -2,6 +2,7 @@ package fr.yandexdown
 
 import android.app.DownloadManager
 import android.content.Context
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
@@ -33,7 +34,8 @@ import java.util.concurrent.TimeUnit
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContent { YandexDownScreen(applicationContext) }
+        val sharedText = intent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        setContent { YandexDownScreen(applicationContext, sharedText) }
     }
 }
 
