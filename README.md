@@ -1,54 +1,52 @@
 # YandexDown Android
 
-Application Android native Kotlin/Jetpack Compose pour analyser les liens Yandex Disk et évoluer vers un gestionnaire de téléchargement et de transferts cloud.
+Application Android native Kotlin / Jetpack Compose pour parcourir les liens publics Yandex Disk et télécharger leurs fichiers.
 
-## État actuel
+## Fonctionnalités présentes
 
-**Prototype initial (0.1.0)**
+- Interface française claire.
+- Validation des liens HTTPS Yandex Disk.
+- Lecture des métadonnées via l'API officielle Yandex Disk.
+- Affichage des fichiers et dossiers partagés.
+- Navigation dans les sous-dossiers.
+- Téléchargement de fichiers via le gestionnaire Android (notifications système et reprise gérée par Android).
+- Noms de fichiers nettoyés avant enregistrement.
+- Gestion des erreurs HTTP et messages renvoyés par Yandex.
+- Compilation APK debug via GitHub Actions.
 
-Implémenté :
-- Projet Android Kotlin + Jetpack Compose.
-- Interface claire en français.
-- Validation basique d'un lien Yandex Disk.
-- Lecture des métadonnées d'une ressource publique via l'API REST officielle Yandex Disk.
-- Workflow GitHub Actions qui compile un APK debug et le publie comme artefact.
+## Installation de la version de test
 
-Pas encore implémenté :
-- Téléchargement effectif des fichiers et dossiers.
-- OAuth Yandex et navigation dans le disque privé du compte connecté.
-- Gestion des mots de passe de liens partagés (à confirmer selon les capacités officielles de l'API).
-- Intégrations OAuth et transferts vers Google Drive, Dropbox, OneDrive, MEGA et pCloud.
-- Transfert cloud-à-cloud, file d'attente persistante et reprise.
-- Résolution de liens tiers Bypass.vip / Bypass.city.
-- Récupération du cache privé d'autres applications (non accessible normalement à Android).
-- Historique avancé, tests instrumentés et vérification d'intégrité.
+1. Ouvrir l'onglet Actions : https://github.com/nul353000-tech/YandexDown-Android/actions
+2. Ouvrir le dernier workflow Android debug APK terminé avec succès.
+3. Télécharger l'artefact YandexDown-debug.
+4. Extraire l'archive ZIP et installer l'APK sur Android.
 
-Ne pas présenter ces éléments comme fonctionnels avant leur implémentation et leurs tests.
+## Fonctions encore à développer
 
-## Compilation
+Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'elles ne sont pas livrées et testées :
+- Transfert cloud-à-cloud vers Google Drive, Dropbox, OneDrive, MEGA et pCloud.
+- Connexion OAuth Yandex et navigation dans le disque privé.
+- OAuth Google Drive et destination cloud sans stockage permanent sur le téléphone.
+- Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
+- Résolution de raccourcisseurs / interstitiels tiers compatibles.
+- File de transferts persistante, vérification d'intégrité et reprise applicative.
+- Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
 
-Le workflow GitHub Actions utilise JDK 17 et Gradle 8.9 :
-- GitHub > Actions > Android debug APK.
-- Télécharger l'artefact `YandexDown-debug`.
-- Installer l'APK debug sur un appareil Android compatible.
-
-Compilation locale :
-```bash
-gradle --no-daemon assembleDebug
-```
+Note importante sur le stockage : cette version de développement télécharge les fichiers dans Téléchargements/YandexDown via le service Android. Le mode cloud-only demandé sera activé lorsque l'intégration OAuth et l'envoi vers Google Drive seront terminés. Il n'est pas présenté comme disponible aujourd'hui.
 
 ## Sécurité et limites
 
-- Les dossiers privés ne sont accessibles qu'après authentification du propriétaire du compte et selon les autorisations accordées.
-- Un mot de passe de partage est distinct du mot de passe du compte. Il ne doit être envoyé qu'à un endpoint officiel qui le prend explicitement en charge.
-- Les CAPTCHA, contrôles anti-robot, paiements et restrictions d'accès ne sont pas neutralisés.
-- Ne jamais stocker les mots de passe ou jetons OAuth en clair. Utiliser Android Keystore et les flux OAuth recommandés.
-- Le transfert direct cloud-à-cloud dépend des API de chaque fournisseur. Un relais distant peut être nécessaire et doit être sécurisé.
+- L'accès privé nécessite l'authentification légitime du propriétaire du compte et les autorisations correspondantes.
+- Un mot de passe de partage est différent du mot de passe du compte.
+- Aucun CAPTCHA, paiement, contrôle anti-robot ou contrôle d'accès n'est contourné.
+- Les jetons OAuth devront être protégés avec Android Keystore et les flux OAuth recommandés.
+- Les API des fournisseurs déterminent si un transfert direct cloud-à-cloud est possible.
 - Android n'autorise pas l'accès arbitraire au cache privé d'autres applications.
 
-## Références
+## Références techniques
 
 - Yandex Disk REST API: https://yandex.com/dev/disk-api/doc/en/
+- Android DownloadManager: https://developer.android.com/reference/android/app/DownloadManager
 - Android WorkManager: https://developer.android.com/topic/libraries/architecture/workmanager
 - Android Storage Access Framework: https://developer.android.com/training/data-storage/shared/documents-files
 - Google Drive API: https://developers.google.com/drive/api/guides/manage-uploads
