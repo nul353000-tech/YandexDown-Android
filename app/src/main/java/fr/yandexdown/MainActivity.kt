@@ -590,7 +590,7 @@ private fun resolveWithBypassCity(input: String): String {
         ?: throw IllegalStateException("Le format de requête Bypass.city est absent.")
     val jsonSchema = content.optJSONObject("application/json")?.optJSONObject("schema")
         ?: throw IllegalStateException("Le schéma JSON de Bypass.city est absent.")
-    val ref = jsonSchema.optString("$ref")
+    val ref = jsonSchema.optString("\$ref")
     val schema = if (ref.startsWith("#/components/schemas/")) {
         specResponse.optJSONObject("components")?.optJSONObject("schemas")
             ?.optJSONObject(ref.substringAfterLast("/"))
