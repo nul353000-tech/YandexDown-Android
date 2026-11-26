@@ -230,15 +230,29 @@ private fun inspectPublicLink(url: String): Pair<String, List<DiskItem>> {
     val json = apiGet("https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${enc(url)}&limit=100")
     val name = json.optString("name", "YandexDown")
     val type = json.optString("type", "file")
-    val entries = if (type == "dir") parseItems(json) else listOf(
+    val entries = if (type == "dir") listPublicFolder(url, "") else listOf(
         DiskItem(name, json.optString("path", "/"), "file", json.optLong("size"))
     )
     return name to entries
 }
 
 private fun listPublicFolder(key: String, path: String): List<DiskItem> {
-    val url = "https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${enc(key)}&path=${enc(path)}&limit=100"
-    return parseItems(apiGet(url))
+    val all = mutableListOf<DiskItem>()
+    var offset = 0
+    var total = Int.MAX_VALUE
+    while (offset < total && offset < 10000) {
+        val pathPart = if (path.isBlank()) "" else "&path=${enc(path)}"
+        val url = "https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${enc(key)}$pathPart&limit=100&offset=$offset"
+        val json = apiGet(url)
+        val embedded = json.optJSONObject("_embedded")
+        val page = parseItems(json)
+        if (embedded != null && embedded.has("total")) total = embedded.optInt("total", offset + page.size)
+        all.addAll(page)
+        if (page.isEmpty()) break
+        offset += page.size
+        if (page.size < 100) break
+    }
+    return all
 }
 
 private fun parseItems(json: JSONObject): List<DiskItem> {
