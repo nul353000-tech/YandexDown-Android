@@ -738,9 +738,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         Text("Sélection : ${selected!!.name}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                         TextButton(onClick = { selected = null }) { Text("Fermer") }
                     }
-                    if (publicKey.isNotBlank() && selected!!.type == "file") {
+                    if (publicKey.isNotBlank()) {
                         Button(enabled = !busy, onClick = {
-                            val item = selected!!
+                            val item = cloudTransferItem(selected!!)
                             runTask("Transfert vers $defaultCloud…") {
                                 val result = withContext(Dispatchers.IO) {
                                     when (defaultCloud) {
@@ -774,9 +774,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             }
                         }, modifier = Modifier.fillMaxWidth()) { Text("Transférer vers $defaultCloud") }
                     }
-                    if (publicKey.isNotBlank() && dropboxToken.isNotBlank() && selected!!.type == "file") {
+                    if (publicKey.isNotBlank() && dropboxToken.isNotBlank()) {
                         Button(enabled = !busy, onClick = {
-                            val item = selected!!
+                            val item = cloudTransferItem(selected!!)
                             runTask("Transfert direct vers Dropbox…") {
                                 val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "").orEmpty()
                                 val access = withContext(Dispatchers.IO) { refreshDropboxToken(context, clientId) }
@@ -799,9 +799,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Ajouter Dropbox à la file persistante") }
                     }
-                    if (publicKey.isNotBlank() && oneDriveToken.isNotBlank() && selected!!.type == "file") {
+                    if (publicKey.isNotBlank() && oneDriveToken.isNotBlank()) {
                         Button(enabled = !busy, onClick = {
-                            val item = selected!!
+                            val item = cloudTransferItem(selected!!)
                             runTask("Transfert direct vers OneDrive…") {
                                 val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "").orEmpty()
                                 val access = withContext(Dispatchers.IO) { refreshOneDriveToken(context, clientId) }
@@ -824,9 +824,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             modifier = Modifier.fillMaxWidth()
                         ) { Text("Ajouter OneDrive à la file persistante") }
                     }
-                    if (publicKey.isNotBlank() && pCloudToken.isNotBlank() && selected!!.type == "file") {
+                    if (publicKey.isNotBlank() && pCloudToken.isNotBlank()) {
                         Button(enabled = !busy, onClick = {
-                            val item = selected!!
+                            val item = cloudTransferItem(selected!!)
                             runTask("Transfert direct vers pCloud…") {
                                 val result = withContext(Dispatchers.IO) { transferPublicToPCloud(publicKey, item, pCloudToken, pCloudHost) }
                                 status = "Transfert pCloud terminé : $result. Aucun fichier temporaire permanent sur le téléphone."
@@ -921,14 +921,20 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 },
                                 trailingContent = {
                                     if (item.type == "dir") {
-                                        TextButton(
-                                            enabled = !busy && !cloudOnly,
-                                            onClick = {
-                                                val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
-                                                val archive = item.copy(name = "${item.name}.zip", size = 0L, md5 = "")
-                                                queueDownload(archive, privateDownload, isArchive = true)
-                                            }
-                                        ) { Text(if (cloudOnly) "ZIP local désactivé" else "ZIP") }
+                                        Row {
+                                            TextButton(
+                                                enabled = !busy,
+                                                onClick = { selected = item }
+                                            ) { Text("Sélectionner") }
+                                            TextButton(
+                                                enabled = !busy && !cloudOnly,
+                                                onClick = {
+                                                    val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
+                                                    val archive = item.copy(name = "${item.name}.zip", size = 0L, md5 = "")
+                                                    queueDownload(archive, privateDownload, isArchive = true)
+                                                }
+                                            ) { Text(if (cloudOnly) "ZIP local désactivé" else "ZIP") }
+                                        }
                                     }
                                 },
                                 modifier = Modifier.clickable {
@@ -1590,3 +1596,6 @@ private fun formatSize(size: Long): String = when {
     size < 1024 * 1024 -> "${size / 1024} Ko"
     else -> String.format("%.1f Mo", size / (1024.0 * 1024.0))
 }
+
+private fun cloudTransferItem(item: DiskItem): DiskItem =
+    if (item.type == "dir") item.copy(name = "${item.name}.zip", type = "file", size = 0L, md5 = "") else item
