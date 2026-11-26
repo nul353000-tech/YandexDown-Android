@@ -128,6 +128,38 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
         } else status = "Autorisation Google annulée."
     }
 
+    fun connectGoogleDrive() {
+        val activity = context as? Activity
+        if (activity == null) {
+            status = "Impossible d’ouvrir l’autorisation Google depuis ce contexte."
+            return
+        }
+        val request = AuthorizationRequest.builder()
+            .setRequestedScopes(listOf(Scope("https://www.googleapis.com/auth/drive.file")))
+            .build()
+        Identity.getAuthorizationClient(activity).authorize(request)
+            .addOnSuccessListener { authorization ->
+                if (authorization.hasResolution()) {
+                    val pending = authorization.pendingIntent
+                    if (pending != null) {
+                        googleAuthorizationLauncher.launch(
+                            IntentSenderRequest.Builder(pending.intentSender).build()
+                        )
+                    } else status = "Google demande une autorisation supplémentaire non disponible."
+                } else {
+                    val token = authorization.accessToken.orEmpty()
+                    if (token.isNotBlank()) {
+                        TokenVault.write(context, "google_drive_token", token)
+                        googleDriveToken = token
+                        status = "Google Drive connecté."
+                    } else status = "Aucun jeton Google reçu."
+                }
+            }
+            .addOnFailureListener { error ->
+                status = "Connexion Google impossible : ${error.message ?: "erreur inconnue"}"
+            }
+    }
+
     fun runTask(message: String, task: suspend () -> Unit) {
         scope.launch {
             busy = true
@@ -312,6 +344,22 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                 if (showAccountSettings) {
                     ElevatedCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Google Drive — destination cloud par défaut", style = MaterialTheme.typography.titleMedium)
+                            Text(if (googleDriveToken.isBlank()) "Non connecté" else "Connecté sur cet appareil", style = MaterialTheme.typography.bodySmall)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    onClick = { connectGoogleDrive() },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text(if (googleDriveToken.isBlank()) "Connecter Google Drive" else "Renouveler l’accès") }
+                                if (googleDriveToken.isNotBlank()) {
+                                    OutlinedButton(onClick = {
+                                        TokenVault.clear(context, "google_drive_token")
+                                        googleDriveToken = ""
+                                        status = "Google Drive déconnecté."
+                                    }) { Text("Déconnecter") }
+                                }
+                            }
+                            HorizontalDivider()
                             Text("Yandex Disk privé", style = MaterialTheme.typography.titleMedium)
                             OutlinedTextField(
                                 value = yandexClientId,
@@ -381,6 +429,22 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Sélection : ${selected!!.name}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                         TextButton(onClick = { selected = null }) { Text("Fermer") }
+                    }
+                    if (publicKey.isNotBlank() && googleDriveToken.isNotBlank() && selected!!.type == "file") {
+                        Button(
+                            enabled = !busy,
+                            onClick = {
+                                val item = selected!!
+                                runTask("Transfert direct vers Google Drive…") {
+                                    val result = withContext(Dispatchers.IO) {
+                                        transferPublicToGoogleDrive(publicKey, item, googleDriveToken)
+                                    }
+                                    status = "Transfert Google Drive terminé : $result. Aucun fichier temporaire sur le téléphone."
+                                    selected = null
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Envoyer directement vers Google Drive") }
                     }
                     if (publicKey.isNotBlank() && yandexToken.isNotBlank()) {
                         OutlinedButton(
@@ -493,6 +557,51 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
 }
 
 
+
+
+private fun transferPublicToGoogleDrive(publicKey: String, item: DiskItem, accessToken: String): String {
+    require(item.type == "file") { "Sélectionne un fichier pour le transfert Google Drive." }
+    val metadata = JSONObject().put("name", item.name)
+    val init = Request.Builder()
+        .url("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable")
+        .header("Authorization", "Bearer $accessToken")
+        .header("Content-Type", "application/json; charset=UTF-8")
+        .header("X-Upload-Content-Type", "application/octet-stream")
+        .apply { if (item.size > 0) header("X-Upload-Content-Length", item.size.toString()) }
+        .post(metadata.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+        .build()
+    val sessionUrl = http.newCall(init).execute().use { response ->
+        if (!response.isSuccessful) {
+            val body = response.body?.string().orEmpty()
+            throw IllegalStateException("Google Drive HTTP ${response.code}: ${body.take(220)}")
+        }
+        response.header("Location")?.takeIf { it.startsWith("https://") }
+            ?: throw IllegalStateException("Google Drive n’a pas retourné d’URL de session.")
+    }
+    val sourceUrl = getDownloadUrl(publicKey, item.path)
+    http.newCall(Request.Builder().url(sourceUrl).get().build()).execute().use { source ->
+        if (!source.isSuccessful) throw IllegalStateException("Téléchargement Yandex HTTP ${source.code}.")
+        val sourceBody = source.body ?: throw IllegalStateException("Réponse Yandex vide.")
+        val uploadBody = object : okhttp3.RequestBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength() = sourceBody.contentLength()
+            override fun writeTo(sink: okio.BufferedSink) {
+                sourceBody.byteStream().use { input -> input.copyTo(sink.outputStream()) }
+            }
+        }
+        val upload = Request.Builder().url(sessionUrl).put(uploadBody)
+            .apply { if (item.size > 0) header("Content-Length", item.size.toString()) }
+            .build()
+        http.newCall(upload).execute().use { response ->
+            if (response.code != 200 && response.code != 201) {
+                val body = response.body?.string().orEmpty()
+                throw IllegalStateException("Envoi Google Drive HTTP ${response.code}: ${body.take(220)}")
+            }
+            val result = JSONObject(response.body?.string().orEmpty())
+            return result.optString("name", item.name)
+        }
+    }
+}
 
 private fun transferPublicToPrivateYandex(publicKey: String, item: DiskItem, token: String): String {
     val sourceUrl = getDownloadUrl(publicKey, item.path)
