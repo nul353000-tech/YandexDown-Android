@@ -304,6 +304,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             Text("Services de résolution", style = MaterialTheme.typography.titleSmall)
                             Text("Bypass.city · Linkvertise · Lootlinks · Work.ink · Cuty.io · Boost.ink · Adfoc.us · Rekonise", style = MaterialTheme.typography.bodySmall)
                             Text("Bypass.city API : $bypassCityStatus", style = MaterialTheme.typography.bodySmall)
+                            Text("Confidentialité : le lien saisi est transmis au service Bypass.city pour traitement. N’envoie pas de lien privé contenant un jeton ou un code d’accès.", style = MaterialTheme.typography.labelSmall)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Button(
                                     enabled = resolverInput.startsWith("https://") && !busy,
@@ -707,7 +708,15 @@ private object TokenVault {
 
 
 
+@Volatile private var lastBypassCityRequestAt = 0L
+
 private fun resolveWithBypassCity(input: String): String {
+    synchronized(Unit) {
+        val now = System.currentTimeMillis()
+        val waitMs = 6500L - (now - lastBypassCityRequestAt)
+        require(waitMs <= 0L) { "Limite de Bypass.city : réessaie dans ${(waitMs / 1000L) + 1} seconde(s)." }
+        lastBypassCityRequestAt = now
+    }
     val parsedInput = Uri.parse(input)
     require(parsedInput.scheme == "https" && !parsedInput.host.isNullOrBlank()) {
         "Entre un lien HTTPS valide."
