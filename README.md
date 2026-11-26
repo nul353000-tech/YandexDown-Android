@@ -33,6 +33,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 ## Fonctions natives ajoutées dans cette version
 
 - Écran natif « Outils de liens intégrés » : saisie, collage, résolution HTTP simple et copie du résultat sans ouvrir le navigateur.
+- Liste de domaines de raccourcisseurs pris en charge pour éviter les requêtes arbitraires ; l'URL envoyée à Bypass.city est signalée à l'utilisateur.
 - Diagnostic natif de l'API Bypass.city : lecture de la disponibilité et du catalogue des services.
 - Résolution Bypass.city par API : l'application lit le schéma OpenAPI publié à l'exécution, vérifie le champ URL et les paramètres obligatoires, puis appelle uniquement l'opération documentée si le schéma est compatible.
 - Connexion Google Drive avec Google Identity Services et autorisation limitée à `drive.file`.
@@ -78,7 +79,7 @@ Les deux services demandés sont référencés pour la résolution des liens pub
 - Bypass.vip : https://bypass.vip/ (l'accès à son API premium nécessite un accès/API key selon ses conditions).
 - Bypass.city : https://bypass.city/ et liste des sites pris en charge : https://bypass.city/supported.
 
-Bypass.city est appelé depuis l'interface native via son API : l'application lit son schéma OpenAPI avant d'envoyer une requête, et refuse l'appel si les champs requis ne sont pas documentés ou nécessitent des paramètres non configurés. Bypass.vip dispose d'une API Premium soumise à clé et à conditions d'utilisation ; l'intégration attend une documentation technique et une clé autorisée. Les pages nécessitant CAPTCHA, anti-bot, connexion ou validation humaine ne sont pas contournées.
+Bypass.city est appelé depuis l'interface native via son API : l'application lit son schéma OpenAPI avant d'envoyer une requête, applique une temporisation conservatrice et refuse l'appel si les champs requis ne sont pas documentés ou nécessitent des paramètres non configurés. Bypass.vip dispose d'une API Premium soumise à clé et à conditions d'utilisation ; l'intégration attend une documentation technique et une clé autorisée. Les pages nécessitant CAPTCHA, anti-bot, connexion ou validation humaine ne sont pas contournées.
 
 ## Références techniques
 
