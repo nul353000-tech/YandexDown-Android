@@ -33,6 +33,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 
 Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'elles ne sont pas livrées et testées :
 - Transfert cloud-à-cloud vers Google Drive, Dropbox, OneDrive, MEGA et pCloud.
+- Transfert sans fichier temporaire depuis un lien Yandex public vers son propre Yandex Disk privé (le flux passe par la connexion réseau du téléphone, sans stockage permanent local).
 - Flux OAuth Yandex entièrement intégré avec retour automatique dans l'application (l'identifiant d'application Yandex doit être créé et renseigné une fois ; cette version utilise le flux de jeton officiel avec collage du jeton retourné).
 - OAuth Google Drive et destination cloud sans stockage permanent sur le téléphone.
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
