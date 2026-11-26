@@ -1028,7 +1028,7 @@ private fun extractZipViaCloudRelay(publicKey: String, item: DiskItem, provider:
         .header("Accept", "application/json")
         .post(payload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
         .build()
-    zipRelayHttp.newCall(request).execute().use { response ->
+    return zipRelayHttp.newCall(request).execute().use { response ->
         val body = response.body?.string().orEmpty()
         if (!response.isSuccessful) {
             val message = runCatching { JSONObject(body).optString("detail") }.getOrDefault("")
