@@ -27,9 +27,8 @@ internal fun extractEmbeddedHttpsTarget(input: String): String? {
         val host = target.host?.lowercase().orEmpty()
         if (target.scheme.equals("https", ignoreCase = true) &&
             host.isNotBlank() &&
-            target.userInfo == null &&
-            (target.port == -1 || target.port == 443) &&
-            host != wrapper.host.lowercase()
+            host != wrapper.host.lowercase() &&
+            isSafeHttpsTarget(candidate)
         ) {
             return target.toASCIIString()
         }
