@@ -33,11 +33,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.FormBody
+import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+import java.security.SecureRandom
+import java.security.MessageDigest
 import android.util.Base64
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -52,11 +56,14 @@ import com.google.android.gms.common.api.ApiException
 class MainActivity : ComponentActivity() {
     private var clipboardLink by mutableStateOf("")
     private var sharedLink by mutableStateOf("")
+    private var oauthCallback by mutableStateOf("")
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        sharedLink = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
+        val data = intent.data
+        if (data?.scheme == "yandexdown" && data.host == "oauth") oauthCallback = data.toString()
+        else sharedLink = intent.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
     }
 
     override fun onResume() {
@@ -70,7 +77,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         sharedLink = intent?.getStringExtra(Intent.EXTRA_TEXT).orEmpty()
-        setContent { YandexDownScreen(this, sharedLink, clipboardLink) }
+        oauthCallback = intent?.data?.takeIf { it.scheme == "yandexdown" && it.host == "oauth" }?.toString().orEmpty()
+        setContent { YandexDownScreen(this, sharedLink, clipboardLink, oauthCallback) }
     }
 }
 
@@ -84,8 +92,61 @@ private data class DiskItem(val name: String, val path: String, val type: String
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: String = "") {
+fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: String = "", oauthCallback: String = "") {
     var link by remember { mutableStateOf(initialLink.ifBlank { clipboardLink }) }
+    LaunchedEffect(oauthCallback) {
+        if (oauthCallback.isNotBlank()) {
+            runTask("Finalisation de la connexion cloud…") {
+                val callback = Uri.parse(oauthCallback)
+                val provider = callback.lastPathSegment.orEmpty()
+                val prefs = context.getSharedPreferences("oauth", Context.MODE_PRIVATE)
+                val state = callback.getQueryParameter("state")
+                    ?: callback.fragment?.let { Uri.parse("https://callback.invalid/?$it").getQueryParameter("state") }
+                val expected = prefs.getString("${provider}_state", null)
+                require(!expected.isNullOrBlank() && state == expected) { "Vérification OAuth échouée (state invalide). Recommence la connexion." }
+                when (provider) {
+                    "dropbox" -> {
+                        val code = callback.getQueryParameter("code") ?: error("Code Dropbox absent.")
+                        val verifier = prefs.getString("dropbox_verifier", null) ?: error("Code PKCE Dropbox absent.")
+                        val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "").orEmpty()
+                        val token = withContext(Dispatchers.IO) { exchangeOAuthCode("https://api.dropboxapi.com/oauth2/token", clientId, "yandexdown://oauth/dropbox", code, verifier) }
+                        TokenVault.write(context, "dropbox_access_token", token.optString("access_token"))
+                        TokenVault.write(context, "dropbox_refresh_token", token.optString("refresh_token"))
+                        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+                            .putLong("dropbox_expiry", System.currentTimeMillis() + token.optLong("expires_in", 14400L) * 1000L).apply()
+                        dropboxToken = token.optString("access_token")
+                    }
+                    "onedrive" -> {
+                        val code = callback.getQueryParameter("code") ?: error("Code Microsoft absent.")
+                        val verifier = prefs.getString("onedrive_verifier", null) ?: error("Code PKCE Microsoft absent.")
+                        val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "").orEmpty()
+                        val token = withContext(Dispatchers.IO) { exchangeOAuthCode("https://login.microsoftonline.com/common/oauth2/v2.0/token", clientId, "yandexdown://oauth/onedrive", code, verifier) }
+                        TokenVault.write(context, "onedrive_access_token", token.optString("access_token"))
+                        TokenVault.write(context, "onedrive_refresh_token", token.optString("refresh_token"))
+                        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+                            .putLong("onedrive_expiry", System.currentTimeMillis() + token.optLong("expires_in", 3600L) * 1000L).apply()
+                        oneDriveToken = token.optString("access_token")
+                    }
+                    "pcloud" -> {
+                        val fragment = callback.fragment ?: error("Réponse pCloud absente.")
+                        val params = Uri.parse("https://callback.invalid/?$fragment")
+                        val token = params.getQueryParameter("access_token") ?: error("Jeton pCloud absent.")
+                        val hostname = params.getQueryParameter("hostname")?.lowercase()
+                            ?.takeIf { it == "api.pcloud.com" || it == "eapi.pcloud.com" }
+                            ?: "eapi.pcloud.com"
+                        TokenVault.write(context, "pcloud_access_token", token)
+                        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("pcloud_host", hostname).apply()
+                        pCloudToken = token
+                        pCloudHost = hostname
+                    }
+                    else -> error("Fournisseur OAuth inconnu.")
+                }
+                prefs.edit().remove("${provider}_state").remove("${provider}_verifier").apply()
+                status = "Connexion $provider terminée. Le jeton est chiffré sur cet appareil."
+            }
+        }
+    }
+
     LaunchedEffect(initialLink, clipboardLink) {
         val suggested = initialLink.ifBlank { clipboardLink }
         if (suggested.isNotBlank() && (link.isBlank() || !isYandexLink(link))) link = suggested
@@ -101,6 +162,13 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var yandexClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("yandex_client_id", "") ?: "") }
     var yandexToken by remember { mutableStateOf(TokenVault.read(context, "yandex_token")) }
     var googleDriveToken by remember { mutableStateOf(TokenVault.read(context, "google_drive_token")) }
+    var dropboxClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "") ?: "") }
+    var dropboxToken by remember { mutableStateOf(TokenVault.read(context, "dropbox_access_token")) }
+    var oneDriveClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "") ?: "") }
+    var oneDriveToken by remember { mutableStateOf(TokenVault.read(context, "onedrive_access_token")) }
+    var pCloudClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("pcloud_client_id", "") ?: "") }
+    var pCloudToken by remember { mutableStateOf(TokenVault.read(context, "pcloud_access_token")) }
+    var pCloudHost by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("pcloud_host", "eapi.pcloud.com") ?: "eapi.pcloud.com") }
     var tokenEntry by remember { mutableStateOf("") }
     var showAccountSettings by remember { mutableStateOf(false) }
     var showLinkTools by remember { mutableStateOf(true) }
@@ -160,6 +228,29 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             }
     }
 
+    fun saveProviderSetting(key: String, value: String) {
+        context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString(key, value.trim()).apply()
+    }
+    fun launchOAuth(provider: String, clientId: String, authBase: String, scopes: String = "") {
+        if (clientId.isBlank()) { status = "Renseigne d’abord l’identifiant de l’application $provider."; return }
+        val stateBytes = ByteArray(24).also { SecureRandom().nextBytes(it) }
+        val stateValue = Base64.encodeToString(stateBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        val verifierBytes = ByteArray(48).also { SecureRandom().nextBytes(it) }
+        val verifier = Base64.encodeToString(verifierBytes, Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING)
+        val challenge = Base64.encodeToString(
+            MessageDigest.getInstance("SHA-256").digest(verifier.toByteArray()),
+            Base64.URL_SAFE or Base64.NO_WRAP or Base64.NO_PADDING
+        )
+        context.getSharedPreferences("oauth", Context.MODE_PRIVATE).edit()
+            .putString("${provider}_state", stateValue).putString("${provider}_verifier", verifier).apply()
+        val redirect = "yandexdown://oauth/$provider"
+        val url = when (provider) {
+            "dropbox" -> "https://www.dropbox.com/oauth2/authorize?client_id=${enc(clientId)}&response_type=code&redirect_uri=${enc(redirect)}&token_access_type=offline&code_challenge=${enc(challenge)}&code_challenge_method=S256&state=${enc(stateValue)}"
+            "onedrive" -> "https://login.microsoftonline.com/common/oauth2/v2.0/authorize?client_id=${enc(clientId)}&response_type=code&redirect_uri=${enc(redirect)}&response_mode=query&scope=${enc(scopes)}&code_challenge=${enc(challenge)}&code_challenge_method=S256&state=${enc(stateValue)}"
+            else -> "https://my.pcloud.com/oauth2/authorize?client_id=${enc(clientId)}&response_type=token&redirect_uri=${enc(redirect)}&state=${enc(stateValue)}"
+        }
+        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
     fun runTask(message: String, task: suspend () -> Unit) {
         scope.launch {
             busy = true
@@ -668,6 +759,174 @@ private fun apiGetAuthorized(url: String, token: String): JSONObject {
             throw IllegalStateException("Yandex privé HTTP ${response.code}: ${detail.ifBlank { body.take(180) }}")
         }
         return JSONObject(body)
+    }
+}
+
+
+private fun exchangeOAuthCode(endpoint: String, clientId: String, redirectUri: String, code: String, verifier: String): JSONObject {
+    val body = FormBody.Builder()
+        .add("client_id", clientId)
+        .add("grant_type", "authorization_code")
+        .add("code", code)
+        .add("redirect_uri", redirectUri)
+        .add("code_verifier", verifier)
+        .build()
+    val request = Request.Builder().url(endpoint).post(body).build()
+    http.newCall(request).execute().use { response ->
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) throw IllegalStateException("Échange OAuth HTTP ${response.code}: ${raw.take(250)}")
+        return JSONObject(raw).also {
+            require(it.optString("access_token").isNotBlank()) { "Le fournisseur n’a pas renvoyé de jeton." }
+        }
+    }
+}
+
+private fun refreshDropboxToken(context: Context, clientId: String): String {
+    val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    val current = TokenVault.read(context, "dropbox_access_token")
+    if (current.isNotBlank() && System.currentTimeMillis() < prefs.getLong("dropbox_expiry", 0L) - 60000L) return current
+    val refresh = TokenVault.read(context, "dropbox_refresh_token")
+    require(refresh.isNotBlank()) { "Reconnecte Dropbox : jeton expiré ou absent." }
+    val body = FormBody.Builder().add("client_id", clientId)
+        .add("grant_type", "refresh_token").add("refresh_token", refresh).build()
+    val request = Request.Builder().url("https://api.dropboxapi.com/oauth2/token").post(body).build()
+    http.newCall(request).execute().use { response ->
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) throw IllegalStateException("Renouvellement Dropbox HTTP ${response.code}.")
+        val json = JSONObject(raw)
+        val token = json.optString("access_token")
+        require(token.isNotBlank()) { "Jeton Dropbox renouvelé absent." }
+        TokenVault.write(context, "dropbox_access_token", token)
+        prefs.edit().putLong("dropbox_expiry", System.currentTimeMillis() + json.optLong("expires_in", 14400L) * 1000L).apply()
+        return token
+    }
+}
+
+private fun transferPublicToDropbox(publicKey: String, item: DiskItem, token: String): String {
+    require(item.type == "file") { "Sélectionne un fichier." }
+    val sourceUrl = getDownloadUrl(publicKey, item.path)
+    http.newCall(Request.Builder().url(sourceUrl).get().build()).execute().use { source ->
+        if (!source.isSuccessful) throw IllegalStateException("Téléchargement Yandex HTTP ${source.code}.")
+        val sourceBody = source.body ?: error("Réponse Yandex vide.")
+        val input = sourceBody.byteStream()
+        val start = Request.Builder().url("https://content.dropboxapi.com/2/files/upload_session/start")
+            .header("Authorization", "Bearer $token")
+            .header("Dropbox-API-Arg", JSONObject().put("close", false).toString())
+            .post(ByteArray(0).toRequestBody("application/octet-stream".toMediaType())).build()
+        val sessionId = http.newCall(start).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw IllegalStateException("Dropbox session HTTP ${response.code}: ${raw.take(200)}")
+            JSONObject(raw).optString("session_id").takeIf { it.isNotBlank() } ?: error("Session Dropbox absente.")
+        }
+        val chunkSize = 8 * 1024 * 1024
+        var offset = 0L
+        val buffer = ByteArray(chunkSize)
+        while (true) {
+            var count = 0
+            while (count < buffer.size) {
+                val n = input.read(buffer, count, buffer.size - count)
+                if (n < 0) break
+                count += n
+            }
+            if (count == 0) break
+            val bytes = buffer.copyOf(count)
+            val appendArg = JSONObject().put("cursor", JSONObject().put("session_id", sessionId).put("offset", offset)).put("close", false)
+            val append = Request.Builder().url("https://content.dropboxapi.com/2/files/upload_session/append_v2")
+                .header("Authorization", "Bearer $token").header("Dropbox-API-Arg", appendArg.toString())
+                .post(bytes.toRequestBody("application/octet-stream".toMediaType())).build()
+            http.newCall(append).execute().use { response ->
+                if (!response.isSuccessful) throw IllegalStateException("Dropbox envoi HTTP ${response.code} à l’octet $offset.")
+            }
+            offset += count
+            if (count < buffer.size) break
+        }
+        require(offset == item.size || item.size <= 0L) { "Taille transférée ($offset) différente de la taille annoncée (${item.size})." }
+        val commit = JSONObject().put("path", "/${item.name}")
+            .put("mode", "add").put("autorename", true).put("mute", false).put("strict_conflict", false)
+        val finishArg = JSONObject()
+            .put("cursor", JSONObject().put("session_id", sessionId).put("offset", offset))
+            .put("commit", commit)
+        val finish = Request.Builder().url("https://content.dropboxapi.com/2/files/upload_session/finish")
+            .header("Authorization", "Bearer $token").header("Dropbox-API-Arg", finishArg.toString())
+            .post(ByteArray(0).toRequestBody("application/octet-stream".toMediaType())).build()
+        http.newCall(finish).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw IllegalStateException("Dropbox finalisation HTTP ${response.code}: ${raw.take(220)}")
+            return JSONObject(raw).optString("name", item.name)
+        }
+    }
+}
+
+private fun transferPublicToOneDrive(publicKey: String, item: DiskItem, token: String): String {
+    require(item.type == "file" && item.size > 0L) { "Sélectionne un fichier non vide." }
+    val safeName = item.name.replace("/", "_").replace("\\", "_")
+    val metadata = JSONObject().put("item", JSONObject().put("@microsoft.graph.conflictBehavior", "rename"))
+    val create = Request.Builder()
+        .url("https://graph.microsoft.com/v1.0/me/drive/root:/${enc(safeName)}:/createUploadSession")
+        .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
+        .post(metadata.toString().toRequestBody("application/json".toMediaType())).build()
+    val uploadUrl = http.newCall(create).execute().use { response ->
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) throw IllegalStateException("OneDrive session HTTP ${response.code}: ${raw.take(220)}")
+        JSONObject(raw).optString("uploadUrl").takeIf { it.startsWith("https://") } ?: error("URL de session OneDrive absente.")
+    }
+    val sourceUrl = getDownloadUrl(publicKey, item.path)
+    http.newCall(Request.Builder().url(sourceUrl).get().build()).execute().use { source ->
+        if (!source.isSuccessful) throw IllegalStateException("Yandex HTTP ${source.code}.")
+        val input = source.body?.byteStream() ?: error("Réponse Yandex vide.")
+        val chunkSize = 10 * 1024 * 1024
+        val buffer = ByteArray(chunkSize)
+        var offset = 0L
+        while (offset < item.size) {
+            var count = 0
+            val wanted = minOf(buffer.size.toLong(), item.size - offset).toInt()
+            while (count < wanted) {
+                val n = input.read(buffer, count, wanted - count)
+                if (n < 0) break
+                count += n
+            }
+            require(count > 0) { "Flux Yandex interrompu à l’octet $offset." }
+            val bytes = buffer.copyOf(count)
+            val end = offset + count - 1
+            val put = Request.Builder().url(uploadUrl)
+                .header("Content-Length", count.toString())
+                .header("Content-Range", "bytes $offset-$end/${item.size}")
+                .put(bytes.toRequestBody("application/octet-stream".toMediaType())).build()
+            http.newCall(put).execute().use { response ->
+                if (response.code != 202 && response.code != 200 && response.code != 201) {
+                    throw IllegalStateException("OneDrive envoi HTTP ${response.code} à l’octet $offset.")
+                }
+            }
+            offset += count
+        }
+        return item.name
+    }
+}
+
+private fun transferPublicToPCloud(publicKey: String, item: DiskItem, token: String, host: String): String {
+    require(item.type == "file") { "Sélectionne un fichier." }
+    val sourceUrl = getDownloadUrl(publicKey, item.path)
+    http.newCall(Request.Builder().url(sourceUrl).get().build()).execute().use { source ->
+        if (!source.isSuccessful) throw IllegalStateException("Yandex HTTP ${source.code}.")
+        val sourceBody = source.body ?: error("Réponse Yandex vide.")
+        val streamedBody = object : okhttp3.RequestBody() {
+            override fun contentType() = "application/octet-stream".toMediaType()
+            override fun contentLength() = -1L
+            override fun writeTo(sink: okio.BufferedSink) {
+                sourceBody.byteStream().use { it.copyTo(sink.outputStream()) }
+            }
+        }
+        val multipart = MultipartBody.Builder().setType(MultipartBody.FORM)
+            .addFormDataPart("file", item.name, streamedBody).build()
+        val url = "https://$host/uploadfile?access_token=${enc(token)}&folderid=0&nopartial=1&renameifexists=1"
+        val request = Request.Builder().url(url).post(multipart).build()
+        http.newCall(request).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw IllegalStateException("pCloud HTTP ${response.code}: ${raw.take(200)}")
+            val json = JSONObject(raw)
+            if (json.optInt("result", -1) != 0) throw IllegalStateException("Erreur pCloud ${json.optInt("result")}.")
+            return json.optJSONArray("metadata")?.optJSONObject(0)?.optString("name") ?: item.name
+        }
     }
 }
 
