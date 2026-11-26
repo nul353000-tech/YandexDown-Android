@@ -116,6 +116,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var pCloudClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("pcloud_client_id", "") ?: "") }
     var pCloudToken by remember { mutableStateOf(TokenVault.read(context, "pcloud_access_token")) }
     var pCloudHost by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("pcloud_host", "eapi.pcloud.com") ?: "eapi.pcloud.com") }
+    var defaultCloud by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("default_cloud", "Google Drive") ?: "Google Drive") }
+    var cloudOnly by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getBoolean("cloud_only", true)) }
+    var destinationMenuOpen by remember { mutableStateOf(false) }
     var tokenEntry by remember { mutableStateOf("") }
     var showAccountSettings by remember { mutableStateOf(false) }
     var showLinkTools by remember { mutableStateOf(true) }
@@ -450,6 +453,32 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                 if (showAccountSettings) {
                     ElevatedCard(Modifier.fillMaxWidth()) {
                         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Destination automatique", style = MaterialTheme.typography.titleMedium)
+                            Box {
+                                OutlinedButton(onClick = { destinationMenuOpen = true }, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Destination : $defaultCloud")
+                                }
+                                DropdownMenu(expanded = destinationMenuOpen, onDismissRequest = { destinationMenuOpen = false }) {
+                                    listOf("Google Drive", "Dropbox", "OneDrive", "pCloud", "Yandex Disk privé").forEach { provider ->
+                                        DropdownMenuItem(text = { Text(provider) }, onClick = {
+                                            defaultCloud = provider
+                                            saveProviderSetting("default_cloud", provider)
+                                            destinationMenuOpen = false
+                                        })
+                                    }
+                                }
+                            }
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Column(Modifier.weight(1f)) {
+                                    Text("Mode cloud uniquement", style = MaterialTheme.typography.titleSmall)
+                                    Text("Évite les téléchargements permanents sur le téléphone.", style = MaterialTheme.typography.bodySmall)
+                                }
+                                Switch(checked = cloudOnly, onCheckedChange = {
+                                    cloudOnly = it
+                                    context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putBoolean("cloud_only", it).apply()
+                                })
+                            }
+                            HorizontalDivider()
                             Text("Google Drive — destination cloud par défaut", style = MaterialTheme.typography.titleMedium)
                             Text(if (googleDriveToken.isBlank()) "Non connecté" else "Connecté sur cet appareil", style = MaterialTheme.typography.bodySmall)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -560,6 +589,42 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         Text("Sélection : ${selected!!.name}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                         TextButton(onClick = { selected = null }) { Text("Fermer") }
                     }
+                    if (publicKey.isNotBlank() && selected!!.type == "file") {
+                        Button(enabled = !busy, onClick = {
+                            val item = selected!!
+                            runTask("Transfert vers $defaultCloud…") {
+                                val result = withContext(Dispatchers.IO) {
+                                    when (defaultCloud) {
+                                        "Google Drive" -> {
+                                            require(googleDriveToken.isNotBlank()) { "Connecte d’abord Google Drive dans Comptes cloud." }
+                                            transferPublicToGoogleDrive(publicKey, item, googleDriveToken)
+                                        }
+                                        "Dropbox" -> {
+                                            val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "").orEmpty()
+                                            val access = refreshDropboxToken(context, clientId)
+                                            transferPublicToDropbox(publicKey, item, access)
+                                        }
+                                        "OneDrive" -> {
+                                            val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "").orEmpty()
+                                            val access = refreshOneDriveToken(context, clientId)
+                                            transferPublicToOneDrive(publicKey, item, access)
+                                        }
+                                        "pCloud" -> {
+                                            require(pCloudToken.isNotBlank()) { "Connecte d’abord pCloud dans Comptes cloud." }
+                                            transferPublicToPCloud(publicKey, item, pCloudToken, pCloudHost)
+                                        }
+                                        "Yandex Disk privé" -> {
+                                            require(yandexToken.isNotBlank()) { "Connecte d’abord ton Yandex Disk privé." }
+                                            transferPublicToPrivateYandex(publicKey, item, yandexToken)
+                                        }
+                                        else -> error("Destination inconnue.")
+                                    }
+                                }
+                                status = "Transfert terminé vers $defaultCloud : $result. Aucun fichier temporaire permanent sur le téléphone."
+                                selected = null
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Transférer vers $defaultCloud") }
+                    }
                     if (publicKey.isNotBlank() && dropboxToken.isNotBlank() && selected!!.type == "file") {
                         Button(enabled = !busy, onClick = {
                             val item = selected!!
@@ -641,9 +706,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 selected = null
                             }
                         },
-                        enabled = !busy && selected!!.type == "file",
+                        enabled = !busy && selected!!.type == "file" && !cloudOnly,
                         modifier = Modifier.fillMaxWidth()
-                    ) { Text("Télécharger le fichier") }
+                    ) { Text(if (cloudOnly) "Téléchargement local désactivé (mode cloud uniquement)" else "Télécharger le fichier") }
                 }
 
                 if (currentPath.isNotEmpty()) {
