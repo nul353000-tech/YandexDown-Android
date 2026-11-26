@@ -834,6 +834,18 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             }
                         }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer directement vers pCloud") }
                     }
+                    if (publicKey.isNotBlank() && pCloudToken.isNotBlank() && selected!!.type == "file" && selected!!.name.endsWith(".zip", ignoreCase = true)) {
+                        OutlinedButton(enabled = !busy, onClick = {
+                            val archive = selected!!
+                            runTask("Envoi et extraction ZIP dans pCloud…") {
+                                val result = withContext(Dispatchers.IO) {
+                                    transferPublicToPCloud(publicKey, archive, pCloudToken, pCloudHost, extractZipAfterUpload = true)
+                                }
+                                status = "Archive transférée et extraite dans pCloud : $result"
+                                selected = null
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) { Text("Envoyer et extraire le ZIP dans pCloud") }
+                    }
                     if (publicKey.isNotBlank() && pCloudToken.isNotBlank() && selected!!.type == "file") {
                         OutlinedButton(
                             enabled = !busy,
@@ -1273,8 +1285,17 @@ private fun transferPublicToOneDrive(publicKey: String, item: DiskItem, token: S
     }
 }
 
-private fun transferPublicToPCloud(publicKey: String, item: DiskItem, token: String, host: String): String {
+private fun transferPublicToPCloud(
+    publicKey: String,
+    item: DiskItem,
+    token: String,
+    host: String,
+    extractZipAfterUpload: Boolean = false
+): String {
     require(item.type == "file") { "Sélectionne un fichier." }
+    require(!extractZipAfterUpload || item.name.endsWith(".zip", ignoreCase = true)) {
+        "Seules les archives ZIP peuvent être extraites automatiquement dans pCloud."
+    }
     val sourceUrl = getDownloadUrl(publicKey, item.path)
     http.newCall(Request.Builder().url(sourceUrl).get().build()).execute().use { source ->
         if (!source.isSuccessful) throw IllegalStateException("Yandex HTTP ${source.code}.")
@@ -1295,9 +1316,62 @@ private fun transferPublicToPCloud(publicKey: String, item: DiskItem, token: Str
             if (!response.isSuccessful) throw IllegalStateException("pCloud HTTP ${response.code}: ${raw.take(200)}")
             val json = JSONObject(raw)
             if (json.optInt("result", -1) != 0) throw IllegalStateException("Erreur pCloud ${json.optInt("result")}.")
-            return json.optJSONArray("metadata")?.optJSONObject(0)?.optString("name") ?: item.name
+            val metadata = json.optJSONArray("metadata")?.optJSONObject(0)
+                ?: throw IllegalStateException("pCloud n’a pas renvoyé les métadonnées du fichier envoyé.")
+            val uploadedName = metadata.optString("name", item.name)
+            if (extractZipAfterUpload) {
+                val fileId = metadata.optLong("fileid", 0L)
+                require(fileId > 0L) { "pCloud n’a pas fourni l’identifiant du ZIP à extraire." }
+                extractPCloudArchive(host, token, fileId)
+                return "$uploadedName · contenu extrait dans le cloud"
+            }
+            return uploadedName
         }
     }
+}
+
+
+private fun extractPCloudArchive(host: String, token: String, fileId: Long) {
+    require(fileId > 0L) { "Identifiant d’archive pCloud invalide." }
+    fun apiHost(value: String): String {
+        val normalized = value.lowercase().removePrefix("https://").removeSuffix("/")
+        require(normalized == "pcloud.com" || normalized.endsWith(".pcloud.com")) {
+            "Hôte de progression pCloud non autorisé."
+        }
+        return normalized
+    }
+    val safeHost = apiHost(host)
+    val startUrl = "https://$safeHost/extractarchive?access_token=${enc(token)}&fileid=$fileId&tofolderid=0&overwrite=rename"
+    val start = http.newCall(Request.Builder().url(startUrl).get().build()).execute().use { response ->
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) throw IllegalStateException("Extraction pCloud HTTP ${response.code}: ${raw.take(220)}")
+        JSONObject(raw).also { json ->
+            if (json.optInt("result", -1) != 0) {
+                throw IllegalStateException("Erreur extraction pCloud ${json.optInt("result")}: ${raw.take(220)}")
+            }
+        }
+    }
+    if (start.optBoolean("finished", false)) return
+    val progressHash = start.optString("progresshash")
+    require(progressHash.isNotBlank()) { "pCloud n’a fourni aucune référence de progression d’extraction." }
+    val progressHost = apiHost(start.optString("hostname").ifBlank { safeHost })
+    var lineCount = start.optInt("lines", 0)
+    repeat(450) {
+        Thread.sleep(2000L)
+        val url = "https://$progressHost/extractarchiveprogress?access_token=${enc(token)}&progresshash=${enc(progressHash)}&lines=$lineCount"
+        val progress = http.newCall(Request.Builder().url(url).get().build()).execute().use { response ->
+            val raw = response.body?.string().orEmpty()
+            if (!response.isSuccessful) throw IllegalStateException("Suivi extraction pCloud HTTP ${response.code}: ${raw.take(180)}")
+            JSONObject(raw).also { json ->
+                if (json.optInt("result", -1) != 0) {
+                    throw IllegalStateException("Erreur suivi extraction pCloud ${json.optInt("result")}: ${raw.take(180)}")
+                }
+            }
+        }
+        lineCount = progress.optInt("lines", lineCount)
+        if (progress.optBoolean("finished", false)) return
+    }
+    throw IllegalStateException("L’extraction pCloud continue en arrière-plan. Consulte ton dossier pCloud dans quelques instants.")
 }
 
 internal object TokenVault {
