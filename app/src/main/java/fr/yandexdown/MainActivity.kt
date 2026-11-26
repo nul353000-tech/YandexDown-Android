@@ -247,7 +247,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         val code = callback.getQueryParameter("code") ?: error("Code Microsoft absent.")
                         val verifier = prefs.getString("onedrive_verifier", null) ?: error("Code PKCE Microsoft absent.")
                         val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "").orEmpty()
-                        val token = withContext(Dispatchers.IO) { exchangeOAuthCode("https://login.microsoftonline.com/common/oauth2/v2.0/token", clientId, "yandexdown://oauth/onedrive", code, verifier) }
+                        val token = withContext(Dispatchers.IO) { exchangeOAuthCode("https://login.microsoftonline.com/common/oauth2/v2.0/token", clientId, "yandexdown://oauth/onedrive", code, verifier, "offline_access Files.ReadWrite User.Read") }
                         TokenVault.write(context, "onedrive_access_token", token.optString("access_token"))
                         TokenVault.write(context, "onedrive_refresh_token", token.optString("refresh_token"))
                         context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
@@ -577,7 +577,10 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         Button(enabled = !busy, onClick = {
                             val item = selected!!
                             runTask("Transfert direct vers OneDrive…") {
-                                val result = withContext(Dispatchers.IO) { transferPublicToOneDrive(publicKey, item, oneDriveToken) }
+                                val clientId = context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("onedrive_client_id", "").orEmpty()
+                                val access = withContext(Dispatchers.IO) { refreshOneDriveToken(context, clientId) }
+                                val result = withContext(Dispatchers.IO) { transferPublicToOneDrive(publicKey, item, access) }
+                                oneDriveToken = TokenVault.read(context, "onedrive_access_token")
                                 status = "Transfert OneDrive terminé : $result. Aucun fichier temporaire permanent sur le téléphone."
                                 selected = null
                             }
@@ -834,14 +837,15 @@ private fun apiGetAuthorized(url: String, token: String): JSONObject {
 }
 
 
-private fun exchangeOAuthCode(endpoint: String, clientId: String, redirectUri: String, code: String, verifier: String): JSONObject {
-    val body = FormBody.Builder()
+private fun exchangeOAuthCode(endpoint: String, clientId: String, redirectUri: String, code: String, verifier: String, scope: String? = null): JSONObject {
+    val builder = FormBody.Builder()
         .add("client_id", clientId)
         .add("grant_type", "authorization_code")
         .add("code", code)
         .add("redirect_uri", redirectUri)
         .add("code_verifier", verifier)
-        .build()
+    if (!scope.isNullOrBlank()) builder.add("scope", scope)
+    val body = builder.build()
     val request = Request.Builder().url(endpoint).post(body).build()
     http.newCall(request).execute().use { response ->
         val raw = response.body?.string().orEmpty()
@@ -925,6 +929,29 @@ private fun transferPublicToDropbox(publicKey: String, item: DiskItem, token: St
             if (!response.isSuccessful) throw IllegalStateException("Dropbox finalisation HTTP ${response.code}: ${raw.take(220)}")
             return JSONObject(raw).optString("name", item.name)
         }
+    }
+}
+
+private fun refreshOneDriveToken(context: Context, clientId: String): String {
+    val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+    val current = TokenVault.read(context, "onedrive_access_token")
+    if (current.isNotBlank() && System.currentTimeMillis() < prefs.getLong("onedrive_expiry", 0L) - 60000L) return current
+    val refresh = TokenVault.read(context, "onedrive_refresh_token")
+    require(refresh.isNotBlank()) { "Reconnecte OneDrive : jeton expiré ou absent." }
+    val body = FormBody.Builder().add("client_id", clientId)
+        .add("grant_type", "refresh_token").add("refresh_token", refresh)
+        .add("scope", "offline_access Files.ReadWrite User.Read").build()
+    val request = Request.Builder().url("https://login.microsoftonline.com/common/oauth2/v2.0/token").post(body).build()
+    http.newCall(request).execute().use { response ->
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) throw IllegalStateException("Renouvellement OneDrive HTTP ${response.code}.")
+        val json = JSONObject(raw)
+        val token = json.optString("access_token")
+        require(token.isNotBlank()) { "Jeton OneDrive renouvelé absent." }
+        TokenVault.write(context, "onedrive_access_token", token)
+        json.optString("refresh_token").takeIf { it.isNotBlank() }?.let { TokenVault.write(context, "onedrive_refresh_token", it) }
+        prefs.edit().putLong("onedrive_expiry", System.currentTimeMillis() + json.optLong("expires_in", 3600L) * 1000L).apply()
+        return token
     }
 }
 
