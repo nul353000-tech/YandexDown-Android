@@ -38,6 +38,7 @@ import kotlinx.coroutines.delay
 import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import okhttp3.OkHttpClient
+import okhttp3.Dns
 import okhttp3.Request
 import okhttp3.FormBody
 import okhttp3.MultipartBody
@@ -1379,22 +1380,62 @@ private fun findResolvedHttpsUrl(value: Any?): String? {
     return null
 }
 
+private val resolverHttp = OkHttpClient.Builder()
+    .connectTimeout(15, TimeUnit.SECONDS)
+    .readTimeout(30, TimeUnit.SECONDS)
+    .followRedirects(false)
+    .followSslRedirects(false)
+    .dns(object : Dns {
+        override fun lookup(hostname: String): List<java.net.InetAddress> {
+            val addresses = Dns.SYSTEM.lookup(hostname)
+            require(addresses.isNotEmpty() && addresses.all(::isPublicInternetAddress)) {
+                "Redirection vers une adresse IP locale ou privée refusée."
+            }
+            return addresses
+        }
+    })
+    .build()
+
 private fun resolveOrdinaryRedirect(input: String): String {
-    val uri = Uri.parse(input)
-    require(uri.scheme == "https" && !uri.host.isNullOrBlank()) { "Entre une adresse HTTPS valide." }
-    val host = uri.host!!.lowercase()
+    require(isSafeHttpsTarget(input)) { "Entre une adresse HTTPS publique et sûre." }
+    val host = Uri.parse(input).host?.lowercase().orEmpty()
     require(isKnownResolverHost(host)) {
         "Ce domaine n’est pas dans la liste des raccourcisseurs pris en charge."
     }
     extractEmbeddedHttpsTarget(input)?.let { return it }
-    val request = Request.Builder().url(input).header("User-Agent", "YandexDown-Android/1.0").get().build()
-    http.newCall(request).execute().use { response ->
-        require(response.isSuccessful) { "Le service a répondu HTTP ${response.code}. Les pages nécessitant une validation restent à confirmer sur leur service." }
-        val finalUrl = response.request.url.toString()
-        val finalUri = Uri.parse(finalUrl)
-        require(finalUri.scheme == "https" && !finalUri.host.isNullOrBlank()) { "La redirection finale n’est pas une adresse HTTPS sûre." }
-        return finalUrl
+
+    var currentUrl = Request.Builder().url(input).get().build().url
+    val visited = mutableSetOf<String>()
+    repeat(10) {
+        require(isSafeHttpsTarget(currentUrl.toString())) {
+            "La redirection pointe vers une adresse HTTPS non autorisée."
+        }
+        require(visited.add(currentUrl.toString())) { "Boucle de redirection détectée." }
+
+        val request = Request.Builder()
+            .url(currentUrl)
+            .header("User-Agent", "YandexDown-Android/1.0")
+            .get()
+            .build()
+        resolverHttp.newCall(request).execute().use { response ->
+            if (response.code in setOf(301, 302, 303, 307, 308)) {
+                val location = response.header("Location")
+                    ?: throw IllegalStateException("Redirection sans en-tête Location.")
+                val nextUrl = currentUrl.resolve(location)
+                    ?: throw IllegalStateException("Adresse de redirection invalide.")
+                require(isSafeHttpsTarget(nextUrl.toString())) {
+                    "Redirection HTTP, port non standard ou destination privée refusée."
+                }
+                currentUrl = nextUrl
+            } else {
+                require(response.isSuccessful) {
+                    "Le service a répondu HTTP ${response.code}. Les pages nécessitant une validation restent à confirmer sur leur service."
+                }
+                return currentUrl.toString()
+            }
+        }
     }
+    throw IllegalStateException("Trop de redirections successives (limite : 10).")
 }
 
 private fun checkBypassCityApi(): Pair<String, String> {
@@ -1440,17 +1481,17 @@ private fun isYandexLink(value: String): Boolean {
 }
 
 private fun resolveYandexSharedUrl(input: String): String {
-    require(input.startsWith("https://")) { "Utilise un lien HTTPS." }
+    require(isSafeHttpsTarget(input)) { "Utilise un lien HTTPS public et sûr." }
     val uri = Uri.parse(input)
     if (isYandexHost(uri.host)) return input
-    require(uri.host?.lowercase()?.let { it in supportedShorteners } == true) { "Ce raccourcisseur n’est pas pris en charge." }
-    http.newCall(Request.Builder().url(input).header("User-Agent", "YandexDown-Android/1.0").get().build()).execute().use { response ->
-        val resolved = response.request.url.toString()
-        require(response.isSuccessful && isYandexHost(Uri.parse(resolved).host)) {
-            "Le lien ne redirige pas directement vers Yandex Disk. Les pages CAPTCHA, anti-bot ou JavaScript doivent être validées sur le site."
-        }
-        return resolved
+    require(uri.host?.lowercase()?.let { it in supportedShorteners } == true) {
+        "Ce raccourcisseur n’est pas pris en charge."
     }
+    val resolved = resolveOrdinaryRedirect(input)
+    require(isYandexHost(Uri.parse(resolved).host)) {
+        "Le lien ne redirige pas directement vers Yandex Disk. Les pages CAPTCHA, anti-bot ou JavaScript doivent être validées sur le site."
+    }
+    return resolved
 }
 
 private fun inspectPublicLink(url: String): Triple<String, List<DiskItem>, String> {
