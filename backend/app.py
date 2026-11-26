@@ -153,16 +153,47 @@ def upload_dropbox(token, root, rel, file_path, folder_cache):
             dropbox_create_folder(token, current)
             folder_cache.add(current)
     remote = "/" + "/".join(parts)
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Dropbox-API-Arg": json.dumps({"path": remote, "mode": "add", "autorename": True, "mute": True}),
-        "Content-Type": "application/octet-stream",
-    }
+    size = os.path.getsize(file_path)
+    base_headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/octet-stream"}
+    if size <= 150 * 1024 * 1024:
+        headers = dict(base_headers)
+        headers["Dropbox-API-Arg"] = json.dumps({"path": remote, "mode": "add", "autorename": True, "mute": True})
+        with open(file_path, "rb") as source:
+            result = HTTP.post("https://content.dropboxapi.com/2/files/upload",
+                               headers=headers, data=source, timeout=(30, 600))
+        if not result.ok:
+            api_error(result, "Dropbox")
+        return
     with open(file_path, "rb") as source:
-        result = HTTP.post("https://content.dropboxapi.com/2/files/upload",
-                           headers=headers, data=source, timeout=(30, 600))
-    if not result.ok:
-        api_error(result, "Dropbox")
+        first = source.read(CHUNK)
+        start = HTTP.post("https://content.dropboxapi.com/2/files/upload_session/start",
+                          headers={**base_headers, "Dropbox-API-Arg": json.dumps({"close": False})},
+                          data=first, timeout=(30, 600))
+        if not start.ok:
+            api_error(start, "Dropbox session")
+        session_id = start.json().get("session_id")
+        if not session_id:
+            raise HTTPException(502, "Dropbox n'a pas fourni d'identifiant de session.")
+        offset = len(first)
+        while size - offset > CHUNK:
+            chunk = source.read(CHUNK)
+            append = HTTP.post("https://content.dropboxapi.com/2/files/upload_session/append_v2",
+                               headers={**base_headers, "Dropbox-API-Arg": json.dumps({
+                                   "cursor": {"session_id": session_id, "offset": offset},
+                                   "close": False})},
+                               data=chunk, timeout=(30, 600))
+            if not append.ok:
+                api_error(append, "Dropbox session")
+            offset += len(chunk)
+        final_chunk = source.read()
+        finish = HTTP.post("https://content.dropboxapi.com/2/files/upload_session/finish",
+                           headers={**base_headers, "Dropbox-API-Arg": json.dumps({
+                               "cursor": {"session_id": session_id, "offset": offset},
+                               "commit": {"path": remote, "mode": "add",
+                                          "autorename": True, "mute": True}})},
+                           data=final_chunk, timeout=(30, 600))
+        if not finish.ok:
+            api_error(finish, "Dropbox finalisation")
 
 
 def onedrive_create_folder(token, parent_id, name):
