@@ -288,7 +288,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 val url = withContext(Dispatchers.IO) {
                                     if (privateDownload) getPrivateDownloadUrl(yandexToken, item.path) else getDownloadUrl(publicKey, item.path)
                                 }
-                                val id = enqueueDownload(context, url, item.name, if (privateDownload) yandexToken else null)
+                                val id = enqueueDownload(context, url, item.name)
                                 status = "Téléchargement ajouté (ID $id) dans Téléchargements/YandexDown."
                                 selected = null
                             }
@@ -339,7 +339,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                                         if (privateDownload) getPrivateDownloadUrl(yandexToken, item.path)
                                                         else getDownloadUrl(publicKey, item.path)
                                                     }
-                                                    val id = enqueueDownload(context, url, "${item.name}.zip", if (privateDownload) yandexToken else null)
+                                                    val id = enqueueDownload(context, url, "${item.name}.zip")
                                                     status = "Archive du dossier ajoutée aux téléchargements (ID $id)."
                                                 }
                                             }
@@ -566,10 +566,9 @@ private fun apiGet(url: String): JSONObject {
     }
 }
 
-private fun enqueueDownload(context: Context, url: String, name: String, bearerToken: String? = null): Long {
+private fun enqueueDownload(context: Context, url: String, name: String): Long {
     val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180).ifBlank { "yandex-file" }
     val request = DownloadManager.Request(Uri.parse(url))
-        .apply { if (!bearerToken.isNullOrBlank()) addRequestHeader("Authorization", "OAuth $bearerToken") }
         .setTitle(safeName)
         .setDescription("Téléchargement depuis Yandex Disk")
         .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
