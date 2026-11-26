@@ -31,6 +31,12 @@ import okhttp3.Request
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
+import android.util.Base64
+import java.security.KeyStore
+import javax.crypto.Cipher
+import javax.crypto.KeyGenerator
+import javax.crypto.spec.GCMParameterSpec
+import javax.crypto.SecretKey
 
 class MainActivity : ComponentActivity() {
     private var clipboardLink by mutableStateOf("")
@@ -81,6 +87,10 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var items by remember { mutableStateOf<List<DiskItem>>(emptyList()) }
     var selected by remember { mutableStateOf<DiskItem?>(null) }
     var autoProcessedLink by remember { mutableStateOf("") }
+    var yandexClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("yandex_client_id", "") ?: "") }
+    var yandexToken by remember { mutableStateOf(TokenVault.read(context, "yandex_token")) }
+    var tokenEntry by remember { mutableStateOf("") }
+    var showAccountSettings by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     fun runTask(message: String, task: suspend () -> Unit) {
@@ -176,6 +186,75 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     else Text("Analyser / afficher le contenu")
                 }
                 }
+                OutlinedButton(onClick = { showAccountSettings = !showAccountSettings }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (showAccountSettings) "Masquer les connexions" else "Comptes cloud et connexions")
+                }
+                if (showAccountSettings) {
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Text("Yandex Disk privé", style = MaterialTheme.typography.titleMedium)
+                            OutlinedTextField(
+                                value = yandexClientId,
+                                onValueChange = { yandexClientId = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Identifiant de l'application Yandex") },
+                                singleLine = true
+                            )
+                            OutlinedButton(
+                                enabled = yandexClientId.isNotBlank(),
+                                onClick = {
+                                    context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit().putString("yandex_client_id", yandexClientId.trim()).apply()
+                                    val authUrl = "https://oauth.yandex.com/authorize?response_type=token&client_id=${enc(yandexClientId.trim())}&redirect_uri=${enc("https://oauth.yandex.com/verification_code")}"
+                                    context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(authUrl)))
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Autoriser Yandex dans le navigateur") }
+                            OutlinedTextField(
+                                value = tokenEntry,
+                                onValueChange = { tokenEntry = it },
+                                modifier = Modifier.fillMaxWidth(),
+                                label = { Text("Jeton OAuth Yandex") },
+                                placeholder = { Text("Colle le jeton reçu après autorisation") },
+                                singleLine = true
+                            )
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    enabled = tokenEntry.isNotBlank(),
+                                    onClick = {
+                                        TokenVault.write(context, "yandex_token", tokenEntry.trim())
+                                        yandexToken = tokenEntry.trim()
+                                        tokenEntry = ""
+                                        status = "Jeton Yandex enregistré de façon chiffrée sur cet appareil."
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Enregistrer") }
+                                OutlinedButton(
+                                    enabled = yandexToken.isNotBlank() && !busy,
+                                    onClick = {
+                                        runTask("Chargement du Yandex Disk privé…") {
+                                            val data = withContext(Dispatchers.IO) { listPrivateFolder(yandexToken, "/") }
+                                            publicKey = ""
+                                            currentPath = "/"
+                                            title = "Mon Yandex Disk"
+                                            items = data
+                                            selected = null
+                                            status = "${data.size} élément(s) dans ton espace privé."
+                                        }
+                                    },
+                                    modifier = Modifier.weight(1f)
+                                ) { Text("Ouvrir mon disque") }
+                            }
+                            if (yandexToken.isNotBlank()) {
+                                TextButton(onClick = {
+                                    TokenVault.clear(context, "yandex_token")
+                                    yandexToken = ""
+                                    status = "Connexion Yandex supprimée de cet appareil."
+                                }) { Text("Déconnecter Yandex") }
+                            }
+                            Text("L'identifiant d'application doit être créé dans le portail développeur Yandex. L'autorisation est demandée directement à Yandex ; aucun mot de passe n'est demandé à l'application.", style = MaterialTheme.typography.bodySmall)
+                        }
+                    }
+                }
                 Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
 
                 if (selected != null) {
@@ -187,8 +266,11 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         onClick = {
                             val item = selected!!
                             runTask("Préparation du téléchargement…") {
-                                val url = withContext(Dispatchers.IO) { getDownloadUrl(publicKey, item.path) }
-                                val id = enqueueDownload(context, url, item.name)
+                                val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
+                                val url = withContext(Dispatchers.IO) {
+                                    if (privateDownload) getPrivateDownloadUrl(yandexToken, item.path) else getDownloadUrl(publicKey, item.path)
+                                }
+                                val id = enqueueDownload(context, url, item.name, if (privateDownload) yandexToken else null)
                                 status = "Téléchargement ajouté (ID $id) dans Téléchargements/YandexDown."
                                 selected = null
                             }
@@ -202,7 +284,10 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     TextButton(onClick = {
                         val parent = currentPath.substringBeforeLast("/", "")
                         runTask("Ouverture du dossier…") {
-                            val data = withContext(Dispatchers.IO) { listPublicFolder(publicKey, parent) }
+                            val data = withContext(Dispatchers.IO) {
+                            if (publicKey.isBlank() && yandexToken.isNotBlank()) listPrivateFolder(yandexToken, parent.ifBlank { "/" })
+                            else listPublicFolder(publicKey, parent)
+                        }
                             currentPath = parent
                             items = data
                             status = "${data.size} élément(s)."
@@ -242,7 +327,10 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 modifier = Modifier.clickable {
                                     if (item.type == "dir") {
                                         runTask("Chargement du dossier…") {
-                                            val data = withContext(Dispatchers.IO) { listPublicFolder(publicKey, item.path) }
+                                            val data = withContext(Dispatchers.IO) {
+                                                if (publicKey.isBlank() && yandexToken.isNotBlank()) listPrivateFolder(yandexToken, item.path)
+                                                else listPublicFolder(publicKey, item.path)
+                                            }
                                             currentPath = item.path
                                             items = data
                                             status = "${data.size} élément(s) dans ${item.name}."
@@ -261,6 +349,65 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
             }
         }
+    }
+}
+
+
+private fun listPrivateFolder(token: String, path: String): List<DiskItem> {
+    val url = "https://cloud-api.yandex.net/v1/disk/resources?path=${enc(path)}&limit=100"
+    return parseItems(apiGetAuthorized(url, token))
+}
+
+private fun getPrivateDownloadUrl(token: String, path: String): String {
+    val url = "https://cloud-api.yandex.net/v1/disk/resources/download?path=${enc(path)}"
+    return apiGetAuthorized(url, token).optString("href").takeIf { it.startsWith("https://") }
+        ?: throw IllegalStateException("Yandex n’a pas fourni de lien de téléchargement privé.")
+}
+
+private fun apiGetAuthorized(url: String, token: String): JSONObject {
+    val request = Request.Builder().url(url).header("Authorization", "OAuth $token").get().build()
+    http.newCall(request).execute().use { response ->
+        val body = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            val detail = runCatching { JSONObject(body).optString("message") }.getOrNull().orEmpty()
+            throw IllegalStateException("Yandex privé HTTP ${response.code}: ${detail.ifBlank { body.take(180) }}")
+        }
+        return JSONObject(body)
+    }
+}
+
+private object TokenVault {
+    private const val alias = "yandexdown_master_key"
+    private fun key(): SecretKey {
+        val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
+        (store.getKey(alias, null) as? SecretKey)?.let { return it }
+        val generator = KeyGenerator.getInstance("AES", "AndroidKeyStore")
+        generator.init(android.security.keystore.KeyGenParameterSpec.Builder(
+            alias,
+            android.security.keystore.KeyProperties.PURPOSE_ENCRYPT or android.security.keystore.KeyProperties.PURPOSE_DECRYPT
+        ).setBlockModes(android.security.keystore.KeyProperties.BLOCK_MODE_GCM)
+            .setEncryptionPaddings(android.security.keystore.KeyProperties.ENCRYPTION_PADDING_NONE)
+            .setRandomizedEncryptionRequired(true).build())
+        return generator.generateKey()
+    }
+    fun write(context: Context, name: String, value: String) {
+        val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(Cipher.ENCRYPT_MODE, key())
+        val encrypted = cipher.iv + cipher.doFinal(value.toByteArray(Charsets.UTF_8))
+        context.getSharedPreferences("secure_tokens", Context.MODE_PRIVATE).edit()
+            .putString(name, Base64.encodeToString(encrypted, Base64.NO_WRAP)).apply()
+    }
+    fun read(context: Context, name: String): String {
+        return runCatching {
+            val encoded = context.getSharedPreferences("secure_tokens", Context.MODE_PRIVATE).getString(name, null) ?: return ""
+            val bytes = Base64.decode(encoded, Base64.NO_WRAP)
+            val cipher = Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, bytes.copyOfRange(0, 12)))
+            String(cipher.doFinal(bytes.copyOfRange(12, bytes.size)), Charsets.UTF_8)
+        }.getOrDefault("")
+    }
+    fun clear(context: Context, name: String) {
+        context.getSharedPreferences("secure_tokens", Context.MODE_PRIVATE).edit().remove(name).apply()
     }
 }
 
@@ -325,9 +472,10 @@ private fun apiGet(url: String): JSONObject {
     }
 }
 
-private fun enqueueDownload(context: Context, url: String, name: String): Long {
+private fun enqueueDownload(context: Context, url: String, name: String, bearerToken: String? = null): Long {
     val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180).ifBlank { "yandex-file" }
     val request = DownloadManager.Request(Uri.parse(url))
+        .apply { if (!bearerToken.isNullOrBlank()) addRequestHeader("Authorization", "OAuth $bearerToken") }
         .setTitle(safeName)
         .setDescription("Téléchargement depuis Yandex Disk")
         .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
