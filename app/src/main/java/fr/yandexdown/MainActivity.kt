@@ -114,7 +114,8 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             link = candidate
             runTask("Analyse automatique du lien détecté…") {
                 val parsed = withContext(Dispatchers.IO) { inspectPublicLink(candidate) }
-                publicKey = candidate
+                publicKey = parsed.third
+                link = parsed.third
                 currentPath = ""
                 title = parsed.first
                 items = parsed.second
@@ -171,7 +172,8 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         onClick = {
                             runTask("Analyse du lien…") {
                             val parsed = withContext(Dispatchers.IO) { inspectPublicLink(link.trim()) }
-                            publicKey = link.trim()
+                            publicKey = parsed.third
+                            link = parsed.third
                             currentPath = ""
                             title = parsed.first
                             items = parsed.second
@@ -476,19 +478,46 @@ private object TokenVault {
     }
 }
 
-private fun isYandexLink(value: String): Boolean =
-    value.startsWith("https://") && (value.contains("disk.yandex") || value.contains("yadi.sk"))
+private val supportedShorteners = setOf(
+    "bit.ly", "tinyurl.com", "rebrand.ly", "cutt.ly", "t.ly", "is.gd", "shorturl.at", "rb.gy"
+)
 
-private fun inspectPublicLink(url: String): Pair<String, List<DiskItem>> {
-    require(url.startsWith("https://")) { "Utilise un lien HTTPS." }
-    require(url.contains("disk.yandex") || url.contains("yadi.sk")) { "Ce lien ne semble pas être un lien Yandex Disk." }
-    val json = apiGet("https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${enc(url)}&limit=100")
+private fun isYandexHost(host: String?): Boolean {
+    val value = host?.lowercase().orEmpty()
+    return value == "disk.yandex.com" || value.endsWith(".disk.yandex.com") ||
+        value == "disk.yandex.ru" || value.endsWith(".disk.yandex.ru") ||
+        value == "yadi.sk"
+}
+
+private fun isYandexLink(value: String): Boolean {
+    val uri = runCatching { Uri.parse(value) }.getOrNull() ?: return false
+    val host = uri.host?.lowercase().orEmpty()
+    return uri.scheme == "https" && (isYandexHost(host) || host in supportedShorteners)
+}
+
+private fun resolveYandexSharedUrl(input: String): String {
+    require(input.startsWith("https://")) { "Utilise un lien HTTPS." }
+    val uri = Uri.parse(input)
+    if (isYandexHost(uri.host)) return input
+    require(uri.host?.lowercase() in supportedShorteners) { "Ce raccourcisseur n’est pas pris en charge." }
+    http.newCall(Request.Builder().url(input).header("User-Agent", "YandexDown-Android/1.0").get().build()).execute().use { response ->
+        val resolved = response.request.url.toString()
+        require(response.isSuccessful && isYandexHost(Uri.parse(resolved).host)) {
+            "Le lien ne redirige pas directement vers Yandex Disk. Les pages CAPTCHA, anti-bot ou JavaScript doivent être validées sur le site."
+        }
+        return resolved
+    }
+}
+
+private fun inspectPublicLink(url: String): Triple<String, List<DiskItem>, String> {
+    val resolvedUrl = resolveYandexSharedUrl(url)
+    val json = apiGet("https://cloud-api.yandex.net/v1/disk/public/resources?public_key=${enc(resolvedUrl)}&limit=100")
     val name = json.optString("name", "YandexDown")
     val type = json.optString("type", "file")
     val entries = if (type == "dir") listPublicFolder(url, "") else listOf(
         DiskItem(name, json.optString("path", "/"), "file", json.optLong("size"))
     )
-    return name to entries
+    return Triple(name, entries, resolvedUrl)
 }
 
 private fun listPublicFolder(key: String, path: String): List<DiskItem> {
