@@ -1386,6 +1386,7 @@ private fun resolveOrdinaryRedirect(input: String): String {
     require(isKnownResolverHost(host)) {
         "Ce domaine n’est pas dans la liste des raccourcisseurs pris en charge."
     }
+    extractEmbeddedHttpsTarget(input)?.let { return it }
     val request = Request.Builder().url(input).header("User-Agent", "YandexDown-Android/1.0").get().build()
     http.newCall(request).execute().use { response ->
         require(response.isSuccessful) { "Le service a répondu HTTP ${response.code}. Les pages nécessitant une validation restent à confirmer sur leur service." }

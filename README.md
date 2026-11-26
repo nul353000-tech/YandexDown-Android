@@ -7,7 +7,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Interface française claire.
 - Import d'un lien depuis le presse-papiers à l'ouverture (détection au premier plan) et bouton Coller.
 - Réception des liens partagés depuis les autres applications Android.
-- Résolution des redirections HTTP simples depuis Bitly, TinyURL, Rebrandly, Cuttly, T.ly, is.gd, shorturl.at et rb.gy vers un lien Yandex.
+- Résolution des redirections HTTP simples depuis Bitly, TinyURL, Rebrandly, Cuttly, T.ly, is.gd, shorturl.at et rb.gy vers un lien Yandex ; extraction native des destinations HTTPS explicites dans les paramètres d'URL.
 - Saisie manuelle toujours disponible.
 - Validation des liens HTTPS Yandex Disk.
 - Lecture des métadonnées via l'API officielle Yandex Disk.
@@ -20,6 +20,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Téléchargement d'un dossier complet sous forme d'archive ZIP.
 - File de transferts persistante via WorkManager et DownloadManager : notifications système, reprise réseau gérée par Android, contrôle de taille et comparaison MD5 lorsque Yandex fournit cette empreinte ; SHA-256 local conservé dans le résultat.
 - Files cloud persistantes Dropbox et OneDrive via WorkManager : reprise des sessions d'envoi au dernier offset confirmé, contrôle du MD5 source, taille distante et hash distant lorsque le fournisseur le renvoie.
+- File pCloud persistante via WorkManager : progression suivie par uploadprogress et intégrité contrôlée via checksumfile ; l'API pCloud ne documente pas de reprise par offset, donc une interruption relance l'envoi complet.
 - Noms de fichiers nettoyés avant enregistrement.
 - Gestion des erreurs HTTP et messages renvoyés par Yandex.
 - Compilation APK debug via GitHub Actions.
@@ -33,7 +34,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 
 ## Fonctions natives ajoutées dans cette version
 
-- Écran natif « Outils de liens intégrés » : saisie, collage, résolution HTTP simple et copie du résultat sans ouvrir le navigateur.
+- Écran natif « Outils de liens intégrés » : saisie, collage, extraction des paramètres de destination HTTPS (url/target/dest/redirect), résolution HTTP simple et copie du résultat sans ouvrir le navigateur.
 - Liste de domaines de raccourcisseurs pris en charge pour éviter les requêtes arbitraires ; l'URL envoyée à Bypass.city est signalée à l'utilisateur.
 - Diagnostic natif de l'API Bypass.city : lecture de la disponibilité et du catalogue des services.
 - Résolution Bypass.city par API : l'application lit le schéma OpenAPI publié à l'exécution, vérifie le champ URL et les paramètres obligatoires, puis appelle uniquement l'opération documentée si le schéma est compatible.
@@ -60,7 +61,7 @@ Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Intégration Bypass.vip : nécessite la documentation et l'accès API Premium autorisé.
-- File cloud persistante avec reprise de session Dropbox/OneDrive et transfert pCloud persistant avec progression API et contrôle checksumfile (reprise pCloud par réenvoi complet, l'API ne documente pas de reprise par offset).
+- Reprise pCloud au dernier octet : non disponible dans l'API officielle uploadfile ; la file persistante relance un envoi complet avec nopartial et vérification checksumfile.
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
 
 Note importante sur le stockage : les téléchargements manuels sont enregistrés dans Téléchargements/YandexDown via le service Android. Les transferts directs Yandex vers Google Drive ou Yandex Disk ne créent pas de fichier permanent local. Le mode cloud-only par défaut pour toutes les opérations reste à finaliser.
