@@ -289,7 +289,7 @@ private fun refreshDropboxAccessToken(context: Context): String {
         .post(body)
         .build()
 
-    dropboxQueueHttp.newCall(request).execute().use { response ->
+    return dropboxQueueHttp.newCall(request).execute().use { response ->
         val raw = response.body?.string().orEmpty()
         if (!response.isSuccessful) {
             val message = "Renouvellement Dropbox HTTP ${response.code}."
@@ -314,7 +314,7 @@ private fun startDropboxUploadSession(token: String): String {
         .header("Dropbox-API-Arg", """{"close":false}""")
         .post(ByteArray(0).toRequestBody("application/octet-stream".toMediaType()))
         .build()
-    dropboxQueueHttp.newCall(request).execute().use { response ->
+    return dropboxQueueHttp.newCall(request).execute().use { response ->
         val raw = response.body?.string().orEmpty()
         if (!response.isSuccessful) {
             val message = "Création de session Dropbox HTTP ${response.code}."
