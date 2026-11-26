@@ -1025,7 +1025,7 @@ private fun transferPublicToOneDrive(publicKey: String, item: DiskItem, token: S
     val safeName = item.name.replace("/", "_").replace("\\", "_")
     val metadata = JSONObject().put("item", JSONObject().put("@microsoft.graph.conflictBehavior", "rename"))
     val create = Request.Builder()
-        .url("https://graph.microsoft.com/v1.0/me/drive/root:/${enc(safeName)}:/createUploadSession")
+        .url("https://graph.microsoft.com/v1.0/me/drive/root:/${enc(safeName).replace("+", "%20")}:/createUploadSession")
         .header("Authorization", "Bearer $token").header("Content-Type", "application/json")
         .post(metadata.toString().toRequestBody("application/json".toMediaType())).build()
     val uploadUrl = http.newCall(create).execute().use { response ->
