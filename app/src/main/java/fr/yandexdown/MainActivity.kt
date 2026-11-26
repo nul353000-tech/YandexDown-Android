@@ -94,8 +94,12 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     }
 
     LaunchedEffect(initialLink, clipboardLink) {
-        val candidate = initialLink.ifBlank { clipboardLink }.trim()
-        if (isYandexLink(candidate) && candidate != autoProcessedLink) {
+        val candidate = when {
+            isYandexLink(clipboardLink) && clipboardLink.trim() != autoProcessedLink -> clipboardLink.trim()
+            isYandexLink(initialLink) && initialLink.trim() != autoProcessedLink -> initialLink.trim()
+            else -> ""
+        }
+        if (candidate.isNotBlank()) {
             autoProcessedLink = candidate
             link = candidate
             runTask("Analyse automatique du lien détecté…") {
