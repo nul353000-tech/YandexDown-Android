@@ -58,7 +58,7 @@ L'intégration Google Drive nécessite un projet Google Cloud avec l'API Drive a
 
 Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'elles ne sont pas livrées et testées :
 - Intégration du SDK MEGA officiel Android (SDK natif C++/JNI) et transfert cloud-to-cloud MEGA.
-- Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
+- Pour un lien protégé par mot de passe, ouverture de la page officielle Yandex afin que l’utilisateur saisisse le mot de passe communiqué par le propriétaire. L’API REST publique documentée ne fournit pas de méthode de déverrouillage utilisable directement dans l’application ; l’accès et le téléchargement dans l’app ne sont donc pas annoncés comme pris en charge après cette saisie.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Reprise pCloud au dernier octet : non disponible dans l'API officielle uploadfile ; la file persistante relance un envoi complet avec nopartial et vérification checksumfile.
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
@@ -85,8 +85,7 @@ Note importante sur le stockage : les téléchargements manuels sont enregistré
 
 ## Résolution Bypass.city
 
-Les deux services demandés sont référencés pour la résolution des liens publicitaires :
-- Bypass.city : https://bypass.city/ et liste des sites pris en charge : https://bypass.city/supported.
+Le résolveur externe conservé est Bypass.city : https://bypass.city/ et liste des sites pris en charge : https://bypass.city/supported. Bypass.vip est retiré du projet.
 
 Bypass.city est appelé depuis l'interface native via son API : l'application lit son schéma OpenAPI avant d'envoyer une requête, applique une temporisation conservatrice et refuse l'appel si les champs requis ne sont pas documentés ou nécessitent des paramètres non configurés. Aucun CAPTCHA, anti-bot, paiement, contrôle d'accès ou validation humaine n'est contourné.
 
