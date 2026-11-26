@@ -118,8 +118,26 @@ def upload_google(token, root, rel, file_path, folder_cache):
         api_error(result, "Google Drive envoi")
 
 
-def upload_dropbox(token, root, rel, file_path):
-    remote = "/" + "/".join([safe_name(root)] + [safe_name(p) for p in PurePosixPath(rel).parts])
+def dropbox_create_folder(token, path):
+    response = HTTP.post("https://api.dropboxapi.com/2/files/create_folder_v2",
+                         headers={"Authorization": f"Bearer {token}",
+                                  "Content-Type": "application/json"},
+                         json={"path": path, "autorename": False}, timeout=60)
+    if response.status_code == 409 and "path/conflict/folder" in response.text:
+        return
+    if not response.ok:
+        api_error(response, "Dropbox création dossier")
+
+
+def upload_dropbox(token, root, rel, file_path, folder_cache):
+    parts = [safe_name(root)] + [safe_name(p) for p in PurePosixPath(rel).parts]
+    current = ""
+    for folder in parts[:-1]:
+        current += "/" + folder
+        if current not in folder_cache:
+            dropbox_create_folder(token, current)
+            folder_cache.add(current)
+    remote = "/" + "/".join(parts)
     headers = {
         "Authorization": f"Bearer {token}",
         "Dropbox-API-Arg": json.dumps({"path": remote, "mode": "add", "autorename": True, "mute": True}),
@@ -132,10 +150,43 @@ def upload_dropbox(token, root, rel, file_path):
         api_error(result, "Dropbox")
 
 
-def upload_onedrive(token, root, rel, file_path):
-    remote_parts = [safe_name(root)] + [safe_name(p) for p in PurePosixPath(rel).parts]
-    remote_path = "/".join(quote(p, safe="") for p in remote_parts)
-    url = f"https://graph.microsoft.com/v1.0/me/drive/root:/{remote_path}:/createUploadSession"
+def onedrive_create_folder(token, parent_id, name):
+    if parent_id == "root":
+        url = "https://graph.microsoft.com/v1.0/me/drive/root/children"
+    else:
+        url = f"https://graph.microsoft.com/v1.0/me/drive/items/{parent_id}/children"
+    response = HTTP.post(url, headers={"Authorization": f"Bearer {token}",
+                                       "Content-Type": "application/json"},
+                         json={"name": name, "folder": {},
+                               "@microsoft.graph.conflictBehavior": "rename"}, timeout=60)
+    if not response.ok:
+        api_error(response, "OneDrive création dossier")
+    return response.json()["id"]
+
+
+def upload_onedrive(token, root, rel, file_path, folder_cache):
+    parts = [safe_name(root)] + [safe_name(p) for p in PurePosixPath(rel).parts]
+    parent = folder_cache.get("")
+    if parent is None:
+        parent = onedrive_create_folder(token, "root", parts[0])
+        folder_cache[""] = parent
+    current = ""
+    for folder in parts[1:-1]:
+        current += "/" + folder
+        if current not in folder_cache:
+            folder_cache[current] = onedrive_create_folder(token, parent, folder)
+        parent = folder_cache[current]
+    filename = parts[-1]
+    if os.path.getsize(file_path) == 0:
+        url = f"https://graph.microsoft.com/v1.0/me/drive/items/{parent}:/{quote(filename, safe='')}:/content"
+        with open(file_path, "rb") as source:
+            response = HTTP.put(url, data=source,
+                                headers={"Authorization": f"Bearer {token}",
+                                         "Content-Length": "0"}, timeout=60)
+        if response.status_code not in (200, 201):
+            api_error(response, "OneDrive fichier vide")
+        return
+    url = f"https://graph.microsoft.com/v1.0/me/drive/items/{parent}:/{quote(filename, safe='')}:/createUploadSession"
     init = HTTP.post(url, headers={"Authorization": f"Bearer {token}",
                                   "Content-Type": "application/json"},
                      json={"item": {"@microsoft.graph.conflictBehavior": "rename"}},
@@ -245,13 +296,15 @@ def extract_archive(payload: ExtractRequest, request: Request):
         if not files:
             raise HTTPException(400, "Aucun fichier à extraire dans cette archive.")
         google_folders = {}
+        dropbox_folders = set()
+        onedrive_folders = {}
         for rel, local in files:
             if provider == "google drive":
                 upload_google(payload.access_token, root, rel, local, google_folders)
             elif provider == "dropbox":
-                upload_dropbox(payload.access_token, root, rel, local)
+                upload_dropbox(payload.access_token, root, rel, local, dropbox_folders)
             elif provider == "onedrive":
-                upload_onedrive(payload.access_token, root, rel, local)
+                upload_onedrive(payload.access_token, root, rel, local, onedrive_folders)
             else:
                 upload_yandex(payload.access_token, root, rel, local)
         return {"ok": True, "provider": provider, "archive_bytes": archive_size,
