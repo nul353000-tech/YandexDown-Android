@@ -282,7 +282,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
 
                 if (currentPath.isNotEmpty()) {
                     TextButton(onClick = {
-                        val parent = currentPath.substringBeforeLast("/", "")
+                        val parent = currentPath.substringBeforeLast("/", "").ifBlank { if (publicKey.isBlank()) "/" else "" }
                         runTask("Ouverture du dossier…") {
                             val data = withContext(Dispatchers.IO) {
                             if (publicKey.isBlank() && yandexToken.isNotBlank()) listPrivateFolder(yandexToken, parent.ifBlank { "/" })
@@ -316,8 +316,12 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                             enabled = !busy,
                                             onClick = {
                                                 runTask("Préparation de l’archive du dossier…") {
-                                                    val url = withContext(Dispatchers.IO) { getDownloadUrl(publicKey, item.path) }
-                                                    val id = enqueueDownload(context, url, "${item.name}.zip")
+                                                    val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
+                                                    val url = withContext(Dispatchers.IO) {
+                                                        if (privateDownload) getPrivateDownloadUrl(yandexToken, item.path)
+                                                        else getDownloadUrl(publicKey, item.path)
+                                                    }
+                                                    val id = enqueueDownload(context, url, "${item.name}.zip", if (privateDownload) yandexToken else null)
                                                     status = "Archive du dossier ajoutée aux téléchargements (ID $id)."
                                                 }
                                             }
@@ -354,8 +358,21 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
 
 
 private fun listPrivateFolder(token: String, path: String): List<DiskItem> {
-    val url = "https://cloud-api.yandex.net/v1/disk/resources?path=${enc(path)}&limit=100"
-    return parseItems(apiGetAuthorized(url, token))
+    val all = mutableListOf<DiskItem>()
+    var offset = 0
+    var total = Int.MAX_VALUE
+    while (offset < total && offset < 10000) {
+        val url = "https://cloud-api.yandex.net/v1/disk/resources?path=${enc(path)}&limit=100&offset=$offset"
+        val json = apiGetAuthorized(url, token)
+        val embedded = json.optJSONObject("_embedded")
+        val page = parseItems(json)
+        if (embedded != null && embedded.has("total")) total = embedded.optInt("total", offset + page.size)
+        all.addAll(page)
+        if (page.isEmpty()) break
+        offset += page.size
+        if (page.size < 100) break
+    }
+    return all
 }
 
 private fun getPrivateDownloadUrl(token: String, path: String): String {
