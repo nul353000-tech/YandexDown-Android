@@ -29,6 +29,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.MediaType.Companion.toMediaType
 import org.json.JSONObject
 import java.net.URLEncoder
 import java.util.concurrent.TimeUnit
@@ -244,6 +246,17 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             Text("Bypass.city · Linkvertise · Lootlinks · Work.ink · Cuty.io · Boost.ink · Adfoc.us · Rekonise", style = MaterialTheme.typography.bodySmall)
                             Text("Bypass.city API : $bypassCityStatus", style = MaterialTheme.typography.bodySmall)
                             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(
+                                    enabled = resolverInput.startsWith("https://") && !busy,
+                                    onClick = {
+                                        runTask("Résolution via l’API officielle Bypass.city…") {
+                                            val result = withContext(Dispatchers.IO) { resolveWithBypassCity(resolverInput.trim()) }
+                                            resolverOutput = result
+                                            status = "Réponse Bypass.city reçue. Vérifie le lien final avant de l’ouvrir."
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("Résoudre avec Bypass.city") }
                                 OutlinedButton(
                                     enabled = !busy,
                                     onClick = {
@@ -556,6 +569,94 @@ private object TokenVault {
     }
 }
 
+
+
+private fun resolveWithBypassCity(input: String): String {
+    val parsedInput = Uri.parse(input)
+    require(parsedInput.scheme == "https" && !parsedInput.host.isNullOrBlank()) {
+        "Entre un lien HTTPS valide."
+    }
+    val specResponse = http.newCall(
+        Request.Builder().url("https://api2.adbypass.org/api-json").header("Accept", "application/json").get().build()
+    ).execute().use { response ->
+        if (!response.isSuccessful) throw IllegalStateException("Documentation API Bypass.city indisponible (HTTP ${response.code}).")
+        JSONObject(response.body?.string().orEmpty())
+    }
+    val bypassOperation = specResponse.optJSONObject("paths")?.optJSONObject("/bypass")?.optJSONObject("post")
+        ?: throw IllegalStateException("L’API Bypass.city ne documente plus l’opération /bypass.")
+    val requestBody = bypassOperation.optJSONObject("requestBody")
+        ?: throw IllegalStateException("Le schéma de requête Bypass.city est absent.")
+    val content = requestBody.optJSONObject("content")
+        ?: throw IllegalStateException("Le format de requête Bypass.city est absent.")
+    val jsonSchema = content.optJSONObject("application/json")?.optJSONObject("schema")
+        ?: throw IllegalStateException("Le schéma JSON de Bypass.city est absent.")
+    val ref = jsonSchema.optString("$ref")
+    val schema = if (ref.startsWith("#/components/schemas/")) {
+        specResponse.optJSONObject("components")?.optJSONObject("schemas")
+            ?.optJSONObject(ref.substringAfterLast("/"))
+            ?: throw IllegalStateException("Le schéma de données Bypass.city est introuvable.")
+    } else jsonSchema
+    val properties = schema.optJSONObject("properties")
+        ?: throw IllegalStateException("Le schéma Bypass.city ne décrit aucun champ.")
+    val urlField = listOf("url", "link", "bypass").firstOrNull { properties.has(it) }
+        ?: throw IllegalStateException("Le champ URL attendu n’est pas documenté par Bypass.city.")
+    val required = schema.optJSONArray("required")
+    val missingRequired = (0 until (required?.length() ?: 0))
+        .mapNotNull { required?.optString(it) }
+        .filter { it != urlField }
+    require(missingRequired.isEmpty()) {
+        "L’API Bypass.city exige aussi : ${missingRequired.joinToString()}. Configuration supplémentaire nécessaire."
+    }
+    val body = JSONObject().put(urlField, input)
+    val server = specResponse.optJSONArray("servers")?.optJSONObject(0)?.optString("url")
+        ?.takeIf { it.startsWith("https://") } ?: "https://api2.adbypass.org/api"
+    val endpoint = server.trimEnd('/') + "/bypass"
+    val request = Request.Builder().url(endpoint)
+        .header("Accept", "application/json")
+        .header("Content-Type", "application/json")
+        .post(body.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+        .build()
+    http.newCall(request).execute().use { response ->
+        val raw = response.body?.string().orEmpty()
+        if (!response.isSuccessful) {
+            val message = runCatching { JSONObject(raw).optString("message") }.getOrNull().orEmpty()
+            throw IllegalStateException("Bypass.city HTTP ${response.code}: ${message.ifBlank { raw.take(220) }}")
+        }
+        val json = runCatching { JSONObject(raw) }.getOrNull()
+            ?: throw IllegalStateException("Réponse Bypass.city illisible.")
+        val resultUrl = findResolvedHttpsUrl(json)
+        if (resultUrl != null) return resultUrl
+        throw IllegalStateException("Bypass.city n’a pas renvoyé de lien final exploitable : ${raw.take(300)}")
+    }
+}
+
+private fun findResolvedHttpsUrl(value: Any?): String? {
+    if (value is JSONObject) {
+        val preferred = listOf("bypassData", "result", "url", "targetUrl", "redirectUrl", "destination", "link")
+        for (key in preferred) {
+            val candidate = value.opt(key)
+            if (candidate is String && candidate.startsWith("https://")) {
+                val host = Uri.parse(candidate).host?.lowercase().orEmpty()
+                if (host.isNotBlank() && host != "bypass.city" && !host.endsWith(".bypass.city") &&
+                    host != "adbypass.org" && !host.endsWith(".adbypass.org")) return candidate
+            }
+        }
+        val keys = value.keys()
+        while (keys.hasNext()) {
+            val found = findResolvedHttpsUrl(value.opt(keys.next()))
+            if (found != null) return found
+        }
+    } else if (value is org.json.JSONArray) {
+        for (i in 0 until value.length()) {
+            val found = findResolvedHttpsUrl(value.opt(i))
+            if (found != null) return found
+        }
+    } else if (value is String && value.startsWith("https://")) {
+        val host = Uri.parse(value).host?.lowercase().orEmpty()
+        if (host.isNotBlank() && host != "bypass.city" && host != "adbypass.org") return value
+    }
+    return null
+}
 
 private fun resolveOrdinaryRedirect(input: String): String {
     val uri = Uri.parse(input)
