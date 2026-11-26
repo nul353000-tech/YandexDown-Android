@@ -13,6 +13,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Lecture des métadonnées via l'API officielle Yandex Disk.
 - Connexion au compte Yandex privé avec jeton OAuth et stockage local chiffré via Android Keystore.
 - Parcours et téléchargements de fichiers privés Yandex après autorisation.
+- Transfert direct sans fichier temporaire d'un fichier public Yandex vers le Yandex Disk privé connecté.
 - Affichage des fichiers et dossiers partagés.
 - Navigation dans les sous-dossiers.
 - Pagination des dossiers (jusqu'à 10 000 éléments par parcours).
@@ -45,7 +46,6 @@ L'intégration Google Drive nécessite un projet Google Cloud avec l'API Drive a
 
 Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'elles ne sont pas livrées et testées :
 - Transferts cloud-à-cloud vers Dropbox, OneDrive, MEGA et pCloud.
-- Transfert sans fichier temporaire depuis un lien Yandex public vers son propre Yandex Disk privé (le flux passe par la connexion réseau du téléphone, sans stockage permanent local).
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Intégration Bypass.vip : nécessite la documentation et l'accès API Premium autorisé.
