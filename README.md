@@ -46,15 +46,13 @@ L'intégration Google Drive nécessite un projet Google Cloud avec l'API Drive a
 Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'elles ne sont pas livrées et testées :
 - Transferts cloud-à-cloud vers Dropbox, OneDrive, MEGA et pCloud.
 - Transfert sans fichier temporaire depuis un lien Yandex public vers son propre Yandex Disk privé (le flux passe par la connexion réseau du téléphone, sans stockage permanent local).
-- Flux OAuth Yandex entièrement intégré avec retour automatique dans l'application (l'identifiant d'application Yandex doit être créé et renseigné une fois ; cette version utilise le flux de jeton officiel avec collage du jeton retourné).
-- OAuth Google Drive et destination cloud sans stockage permanent sur le téléphone.
 - Gestion des mots de passe de liens partagés, uniquement si Yandex expose un mécanisme officiel.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Intégration Bypass.vip : nécessite la documentation et l'accès API Premium autorisé.
 - File de transferts persistante, vérification d'intégrité et reprise applicative.
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
 
-Note importante sur le stockage : cette version télécharge les fichiers dans Téléchargements/YandexDown via le service Android. Le mode cloud-only vers Google Drive n'est pas encore disponible.
+Note importante sur le stockage : les téléchargements manuels sont enregistrés dans Téléchargements/YandexDown via le service Android. Les transferts directs Yandex vers Google Drive ou Yandex Disk ne créent pas de fichier permanent local. Le mode cloud-only par défaut pour toutes les opérations reste à finaliser.
 
 ## Connexion au compte Yandex privé
 
@@ -70,7 +68,7 @@ Note importante sur le stockage : cette version télécharge les fichiers dans T
 - Un mot de passe de partage est différent du mot de passe du compte.
 - Les raccourcisseurs qui redirigent directement en HTTP(S) sont suivis ; les pages intermédiaires nécessitant JavaScript peuvent nécessiter une action humaine.
 - Aucun CAPTCHA, paiement, contrôle anti-robot ou contrôle d'accès n'est contourné.
-- Les jetons OAuth devront être protégés avec Android Keystore et les flux OAuth recommandés.
+- Les jetons Yandex et Google sont chiffrés avec Android Keystore. Les jetons d'accès Google sont de courte durée et peuvent devoir être renouvelés.
 - Les API des fournisseurs déterminent si un transfert direct cloud-à-cloud est possible.
 - Android n'autorise pas l'accès arbitraire au cache privé d'autres applications.
 
@@ -80,7 +78,7 @@ Les deux services demandés sont référencés pour la résolution des liens pub
 - Bypass.vip : https://bypass.vip/ (l'accès à son API premium nécessite un accès/API key selon ses conditions).
 - Bypass.city : https://bypass.city/ et liste des sites pris en charge : https://bypass.city/supported.
 
-Leur intégration automatique directe n'est pas activée dans cette version : aucune documentation d'API publique exploitable n'a été identifiée pour Bypass.city et l'accès API Bypass.vip n'est pas disponible sans clé/autorisation. L'application suit déjà les redirections HTTP simples vers Yandex. Les pages nécessitant CAPTCHA, anti-bot, connexion, scripts ou validation humaine restent ouvertes à l'utilisateur sans contournement.
+Bypass.city est appelé depuis l'interface native via son API : l'application lit son schéma OpenAPI avant d'envoyer une requête, et refuse l'appel si les champs requis ne sont pas documentés ou nécessitent des paramètres non configurés. Bypass.vip dispose d'une API Premium soumise à clé et à conditions d'utilisation ; l'intégration attend une documentation technique et une clé autorisée. Les pages nécessitant CAPTCHA, anti-bot, connexion ou validation humaine ne sont pas contournées.
 
 ## Références techniques
 
