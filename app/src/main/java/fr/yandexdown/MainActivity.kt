@@ -73,6 +73,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var busy by remember { mutableStateOf(false) }
     var items by remember { mutableStateOf<List<DiskItem>>(emptyList()) }
     var selected by remember { mutableStateOf<DiskItem?>(null) }
+    var autoProcessedLink by remember { mutableStateOf("") }
     val scope = rememberCoroutineScope()
 
     fun runTask(message: String, task: suspend () -> Unit) {
@@ -82,6 +83,23 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             try { task() } catch (e: Exception) {
                 status = e.message?.take(300) ?: "Une erreur est survenue."
             } finally { busy = false }
+        }
+    }
+
+    LaunchedEffect(initialLink, clipboardLink) {
+        val candidate = initialLink.ifBlank { clipboardLink }.trim()
+        if (isYandexLink(candidate) && candidate != autoProcessedLink) {
+            autoProcessedLink = candidate
+            link = candidate
+            runTask("Analyse automatique du lien détecté…") {
+                val parsed = withContext(Dispatchers.IO) { inspectPublicLink(candidate) }
+                publicKey = candidate
+                currentPath = ""
+                title = parsed.first
+                items = parsed.second
+                selected = null
+                status = if (items.isEmpty()) "Ressource reconnue. Aucun élément listé." else "${items.size} élément(s) trouvé(s)."
+            }
         }
     }
 
