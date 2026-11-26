@@ -377,6 +377,24 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     leadingIcon = { Icon(Icons.Default.Link, null) },
                     singleLine = true
                 )
+                OutlinedButton(
+                    onClick = {
+                        val target = link.trim()
+                        if (isYandexLink(target)) {
+                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
+                            status = "Page Yandex ouverte : saisis le mot de passe fourni par le propriétaire si nécessaire."
+                        } else {
+                            status = "Entre d’abord un lien Yandex Disk valide."
+                        }
+                    },
+                    enabled = link.isNotBlank() && isYandexLink(link.trim()),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Ouvrir la page Yandex (mot de passe / accès)") }
+                Text(
+                    "Pour les liens protégés, la saisie du mot de passe se fait sur la page officielle Yandex. L’API publique ne fournit pas de méthode documentée pour déverrouiller ces liens dans l’application.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
