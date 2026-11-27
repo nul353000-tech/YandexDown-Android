@@ -15,6 +15,9 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Parcours et téléchargements de fichiers privés Yandex après autorisation.
 - Transfert direct sans fichier temporaire d'un fichier public Yandex vers le Yandex Disk privé connecté.
 - Affichage des fichiers et dossiers partagés.
+- Historique local des 100 derniers liens publics consultés : titre, URL et date, réouverture depuis l'application et effacement manuel.
+- Lecteur vidéo intégré Media3 pour les vidéos publiques compatibles avec les conteneurs et codecs décodés par Android.
+- Visionneuse photo intégrée pour JPEG, PNG, WebP, BMP, HEIC/HEIF et AVIF selon la version Android et le décodeur disponible.
 - Prise en charge sans liste blanche d’extensions : tous les fichiers renvoyés par Yandex Disk sont affichés, notamment les vidéos (MP4, MKV, AVI, MOV, WebM, etc.) et les archives (ZIP, RAR, 7Z, TAR, GZ, BZ2, XZ, ISO, etc.). Les transferts utilisent un flux binaire générique afin de ne pas refuser les extensions inconnues ; les limites de taille et les règles propres à chaque fournisseur cloud restent applicables.
 - Prise en charge des images sans liste blanche d’extensions : JPG/JPEG, PNG, GIF, WebP, HEIC, TIFF, BMP, SVG et autres fichiers image sont affichés et transférés comme fichiers binaires, sans conversion automatique.
 - Navigation dans les sous-dossiers.
@@ -26,6 +29,10 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Noms de fichiers nettoyés avant enregistrement.
 - Gestion des erreurs HTTP et messages renvoyés par Yandex.
 - Compilation APK debug via GitHub Actions.
+
+### Limites de lecture multimédia
+
+La lecture vidéo repose sur Media3/ExoPlayer et les décodeurs de l'appareil. MP4, WebM, Matroska/MKV, MPEG-TS et d'autres conteneurs sont pris en charge lorsque les codecs audio/vidéo correspondants sont disponibles. Il n'existe pas de garantie universelle « tous formats » : certains AVI, FLV, MOV, codecs exotiques, fichiers endommagés ou protégés peuvent ne pas être lus. La visionneuse photo dépend aussi des capacités Android ; les GIF animés ne sont pas annoncés comme animés dans cette version.
 
 ## Installation de la version de test
 
