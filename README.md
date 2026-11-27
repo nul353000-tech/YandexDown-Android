@@ -1,5 +1,7 @@
 # YandexDown Android
 
+Build dependency retry after temporary Maven rate limiting.
+
 Application Android native Kotlin / Jetpack Compose pour parcourir les liens publics Yandex Disk et télécharger leurs fichiers.
 
 ## Fonctionnalités présentes
