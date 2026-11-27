@@ -655,6 +655,44 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     }
                 }
                 Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
+                OutlinedButton(onClick = { showHistory = !showHistory }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (showHistory) "Masquer l’historique" else "Historique des liens (${linkHistory.size})")
+                }
+                if (showHistory) {
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("Liens consultés", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                                TextButton(onClick = {
+                                    linkHistory = emptyList()
+                                    saveLinkHistory(context, linkHistory)
+                                }, enabled = linkHistory.isNotEmpty()) { Text("Effacer") }
+                            }
+                            if (linkHistory.isEmpty()) Text("Aucun lien consulté pour le moment.", style = MaterialTheme.typography.bodySmall)
+                            else LazyColumn(Modifier.heightIn(max = 220.dp)) {
+                                items(linkHistory, key = { it.url }) { entry ->
+                                    Column(Modifier.fillMaxWidth().clickable {
+                                        link = entry.url
+                                        runTask("Réouverture du lien depuis l’historique…") {
+                                            val parsed = withContext(Dispatchers.IO) { inspectPublicLink(entry.url) }
+                                            publicKey = parsed.third
+                                            link = parsed.third
+                                            title = parsed.first
+                                            items = parsed.second
+                                            selected = null
+                                            status = "${items.size} élément(s) trouvé(s)."
+                                        }
+                                    }.padding(vertical = 6.dp)) {
+                                        Text(entry.title.ifBlank { entry.url }, style = MaterialTheme.typography.bodyMedium, maxLines = 1)
+                                        Text(entry.url, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                        Text(entry.visitedAt, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.secondary)
+                                    }
+                                    HorizontalDivider()
+                                }
+                            }
+                        }
+                    }
+                }
                 OutlinedButton(
                     onClick = { showTransferQueue = !showTransferQueue },
                     modifier = Modifier.fillMaxWidth()
