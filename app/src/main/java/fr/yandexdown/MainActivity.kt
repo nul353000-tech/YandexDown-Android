@@ -785,6 +785,19 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         Text("Sélection : ${selected!!.name}", Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
                         TextButton(onClick = { selected = null }) { Text("Fermer") }
                     }
+                    if (publicKey.isNotBlank() && selected!!.type == "file" &&
+                        (isVideoMedia(selected!!.name) || isImageMedia(selected!!.name))) {
+                        OutlinedButton(enabled = !busy, onClick = {
+                            val item = selected!!
+                            runTask("Préparation du média…") {
+                                mediaUrl = withContext(Dispatchers.IO) { getDownloadUrl(publicKey, item.path) }
+                                mediaTitle = item.name
+                                mediaIsVideo = isVideoMedia(item.name)
+                            }
+                        }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (isVideoMedia(selected!!.name)) "Lire la vidéo" else "Afficher la photo")
+                        }
+                    }
                     if (publicKey.isNotBlank()) {
                         Button(enabled = !busy, onClick = {
                             val item = cloudTransferItem(selected!!)
@@ -1046,10 +1059,79 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             }
         }
     }
+    if (mediaUrl.isNotBlank()) MediaViewerDialog(mediaUrl, mediaTitle, mediaIsVideo) { mediaUrl = "" }
 }
 
 
 
+
+
+private data class LinkHistoryEntry(val url: String, val title: String, val visitedAt: String)
+
+private fun loadLinkHistory(context: Context): List<LinkHistoryEntry> {
+    val raw = context.getSharedPreferences("link_history", Context.MODE_PRIVATE).getString("entries", "[]") ?: "[]"
+    return runCatching {
+        val array = org.json.JSONArray(raw)
+        (0 until array.length()).mapNotNull { i ->
+            val item = array.optJSONObject(i) ?: return@mapNotNull null
+            LinkHistoryEntry(item.optString("url"), item.optString("title"), item.optString("visitedAt"))
+        }
+    }.getOrDefault(emptyList())
+}
+
+private fun saveLinkHistory(context: Context, entries: List<LinkHistoryEntry>) {
+    val array = org.json.JSONArray()
+    entries.take(100).forEach { entry ->
+        array.put(JSONObject().put("url", entry.url).put("title", entry.title).put("visitedAt", entry.visitedAt))
+    }
+    context.getSharedPreferences("link_history", Context.MODE_PRIVATE).edit().putString("entries", array.toString()).apply()
+}
+
+private fun rememberLinkHistory(context: Context, existing: List<LinkHistoryEntry>, url: String, title: String): List<LinkHistoryEntry> {
+    val entry = LinkHistoryEntry(url, title, java.text.DateFormat.getDateTimeInstance().format(java.util.Date()))
+    val updated = (listOf(entry) + existing.filterNot { it.url == url }).take(100)
+    saveLinkHistory(context, updated)
+    return updated
+}
+
+private fun isVideoMedia(name: String): Boolean =
+    name.substringAfterLast('.', "").lowercase() in setOf("mp4", "m4v", "mov", "webm", "mkv", "3gp", "ts", "mpg", "mpeg", "avi", "flv", "m3u8", "mpd")
+
+private fun isImageMedia(name: String): Boolean =
+    name.substringAfterLast('.', "").lowercase() in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "heic", "heif", "avif")
+
+@Composable
+private fun MediaViewerDialog(url: String, title: String, video: Boolean, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val player = remember(url, video) {
+        if (video) ExoPlayer.Builder(context).build().apply {
+            setMediaItem(ExoMediaItem.fromUri(url))
+            prepare()
+            playWhenReady = true
+        } else null
+    }
+    androidx.compose.runtime.DisposableEffect(player) { onDispose { player?.release() } }
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(Modifier.fillMaxWidth().heightIn(min = 280.dp, max = 620.dp), shape = MaterialTheme.shapes.large) {
+            Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleSmall, maxLines = 2)
+                    TextButton(onClick = onDismiss) { Text("Fermer") }
+                }
+                if (video && player != null) {
+                    AndroidView(
+                        factory = { viewContext -> PlayerView(viewContext).apply { this.player = player; useController = true } },
+                        update = { it.player = player },
+                        modifier = Modifier.fillMaxWidth().weight(1f)
+                    )
+                } else {
+                    AsyncImage(model = url, contentDescription = title, contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxWidth().weight(1f))
+                }
+            }
+        }
+    }
+}
 
 private fun extractZipViaCloudRelay(publicKey: String, item: DiskItem, provider: String, accessToken: String): String {
     require(item.type == "file" && item.name.endsWith(".zip", ignoreCase = true)) {
