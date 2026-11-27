@@ -50,6 +50,10 @@ import java.util.concurrent.TimeUnit
 import java.security.SecureRandom
 import java.security.MessageDigest
 import android.util.Base64
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -115,6 +119,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
         if (suggested.isNotBlank() && (link.isBlank() || !isYandexLink(link))) link = suggested
     }
     var publicKey by remember { mutableStateOf("") }
+    var showYandexPasswordPage by remember { mutableStateOf(false) }
     var currentPath by remember { mutableStateOf("") }
     var title by remember { mutableStateOf("YandexDown") }
     var status by remember { mutableStateOf("Colle un lien public Yandex Disk pour commencer.") }
@@ -354,6 +359,35 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
         }
     }
 
+    if (showYandexPasswordPage) {
+        Dialog(onDismissRequest = { showYandexPasswordPage = false }) {
+            Surface(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 420.dp, max = 680.dp),
+                shape = MaterialTheme.shapes.large,
+                color = MaterialTheme.colorScheme.surface
+            ) {
+                Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Accès protégé Yandex", style = MaterialTheme.typography.titleMedium)
+                    Text("Saisis le mot de passe directement sur la page officielle ci-dessous.", style = MaterialTheme.typography.bodySmall)
+                    AndroidView(
+                        factory = { viewContext ->
+                            WebView(viewContext).apply {
+                                webViewClient = WebViewClient()
+                                settings.javaScriptEnabled = true
+                                settings.domStorageEnabled = true
+                                loadUrl(link.trim())
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().weight(1f)
+                    )
+                    TextButton(onClick = { showYandexPasswordPage = false }, modifier = Modifier.align(Alignment.End)) {
+                        Text("Fermer")
+                    }
+                }
+            }
+        }
+    }
+
     MaterialTheme(colorScheme = lightColorScheme()) {
         Scaffold(topBar = {
             TopAppBar(
@@ -388,19 +422,17 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                 )
                 OutlinedButton(
                     onClick = {
-                        val target = link.trim()
-                        if (isYandexLink(target)) {
-                            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
-                            status = "Page Yandex ouverte : saisis le mot de passe fourni par le propriétaire si nécessaire."
+                        if (isYandexLink(link.trim())) {
+                            showYandexPasswordPage = true
                         } else {
                             status = "Entre d’abord un lien Yandex Disk valide."
                         }
                     },
                     enabled = link.isNotBlank() && isYandexLink(link.trim()),
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Ouvrir la page Yandex (mot de passe / accès)") }
+                ) { Text("Saisir le mot de passe dans Yandex (dans l’app)") }
                 Text(
-                    "Pour les liens protégés, la saisie du mot de passe se fait sur la page officielle Yandex. L’API publique ne fournit pas de méthode documentée pour déverrouiller ces liens dans l’application.",
+                    "Pour un lien protégé, la page officielle Yandex s’ouvre ici, dans l’application. Saisis le mot de passe communiqué par le propriétaire dans cette page. L’API REST publique ne documente pas de paramètre permettant de transmettre ce mot de passe aux fonctions natives de téléchargement.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
