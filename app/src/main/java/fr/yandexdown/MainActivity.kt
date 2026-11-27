@@ -31,6 +31,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
+import androidx.media3.common.MediaItem as ExoMediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -121,6 +128,11 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var busy by remember { mutableStateOf(false) }
     var items by remember { mutableStateOf<List<DiskItem>>(emptyList()) }
     var selected by remember { mutableStateOf<DiskItem?>(null) }
+    var showHistory by remember { mutableStateOf(false) }
+    var linkHistory by remember { mutableStateOf(loadLinkHistory(context)) }
+    var mediaUrl by remember { mutableStateOf("") }
+    var mediaTitle by remember { mutableStateOf("") }
+    var mediaIsVideo by remember { mutableStateOf(false) }
     var autoProcessedLink by remember { mutableStateOf("") }
     var yandexClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("yandex_client_id", "") ?: "") }
     var yandexToken by remember { mutableStateOf(TokenVault.read(context, "yandex_token")) }
@@ -406,6 +418,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         onClick = {
                             runTask("Analyse du lien…") {
                             val parsed = withContext(Dispatchers.IO) { inspectPublicLink(link.trim()) }
+                            linkHistory = rememberLinkHistory(context, linkHistory, parsed.third, parsed.first)
                             publicKey = parsed.third
                             link = parsed.third
                             currentPath = ""
