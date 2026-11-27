@@ -61,7 +61,7 @@ L'intégration Google Drive nécessite un projet Google Cloud avec l'API Drive a
 
 Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'elles ne sont pas livrées et testées :
 - Intégration du SDK MEGA officiel Android (SDK natif C++/JNI) et transfert cloud-to-cloud MEGA.
-- Pour un lien protégé par mot de passe, ouverture de la page officielle Yandex dans une fenêtre WebView intégrée à l’application : l’utilisateur saisit le mot de passe sur cette page sans basculer vers un navigateur externe. La session WebView reste gérée par Yandex. L’API REST publique ne documente pas de paramètre de déverrouillage par mot de passe ; le déverrouillage dans la page intégrée ne garantit donc pas que l’API native puisse ensuite lister ou télécharger le contenu protégé. Cette limite est signalée dans l’interface.
+- Les liens Yandex protégés par mot de passe ne sont pas déverrouillables via les endpoints publics documentés de l’API REST. L’application ne prétend donc pas pouvoir télécharger directement ces liens protégés sans mécanisme officiel Yandex ; les liens publics non protégés restent traités directement.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Reprise pCloud au dernier octet : non disponible dans l'API officielle uploadfile ; la file persistante relance un envoi complet avec nopartial et vérification checksumfile.
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
