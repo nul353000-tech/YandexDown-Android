@@ -10,6 +10,11 @@ import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.webkit.CookieManager
+import android.webkit.WebView
+import android.webkit.WebViewClient
+import android.webkit.WebSettings
+import android.webkit.URLUtil
 import android.os.Environment
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -138,6 +143,8 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var mediaUrl by remember { mutableStateOf("") }
     var mediaTitle by remember { mutableStateOf("") }
     var mediaIsVideo by remember { mutableStateOf(false) }
+    var showProtectedLink by remember { mutableStateOf(false) }
+    var protectedLinkUrl by remember { mutableStateOf("") }
     var autoProcessedLink by remember { mutableStateOf("") }
     var yandexClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("yandex_client_id", "") ?: "") }
     var yandexToken by remember { mutableStateOf(TokenVault.read(context, "yandex_token")) }
@@ -432,10 +439,20 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     singleLine = true
                 )
                 Text(
-                    "Les liens protégés par mot de passe ne peuvent pas encore être téléchargés directement : l’API publique Yandex ne propose pas de méthode documentée pour transmettre ce mot de passe. Aucun navigateur ne sera ouvert.",
+                    "Pour un lien protégé, ouvre la page officielle Yandex et saisis le mot de passe sur cette page. YandexDown ne lit ni ne conserve ce mot de passe.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
                 )
+                OutlinedButton(
+                    onClick = {
+                        if (isYandexLink(link.trim())) {
+                            protectedLinkUrl = link.trim()
+                            showProtectedLink = true
+                        } else status = "Saisis d’abord un lien Yandex Disk valide."
+                    },
+                    enabled = !busy && isYandexLink(link.trim()),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Ouvrir le lien protégé / saisir le mot de passe") }
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
                         onClick = {
@@ -1140,6 +1157,14 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
         }
     }
     if (mediaUrl.isNotBlank()) MediaViewerDialog(mediaUrl, mediaTitle, mediaIsVideo) { mediaUrl = "" }
+    if (showProtectedLink && protectedLinkUrl.isNotBlank()) {
+        ProtectedLinkDialog(
+            url = protectedLinkUrl,
+            context = context,
+            onDismiss = { showProtectedLink = false },
+            onStatus = { status = it }
+        )
+    }
 }
 
 
@@ -1181,6 +1206,77 @@ private fun isImageMedia(name: String): Boolean =
     name.substringAfterLast('.', "").lowercase() in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "heic", "heif", "avif")
 
 @Composable
+@Composable
+private fun ProtectedLinkDialog(
+    url: String,
+    context: Context,
+    onDismiss: () -> Unit,
+    onStatus: (String) -> Unit
+) {
+    androidx.activity.compose.BackHandler(onBack = onDismiss)
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            shape = MaterialTheme.shapes.large,
+            color = MaterialTheme.colorScheme.surface
+        ) {
+            Column(
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Accès sécurisé Yandex Disk", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Saisis le mot de passe directement dans la page Yandex. YandexDown ne lit ni ne conserve ce mot de passe. Si le propriétaire interdit le téléchargement, seul l’affichage restera possible.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+                AndroidView(
+                    modifier = Modifier.fillMaxWidth().height(520.dp),
+                    factory = { viewContext ->
+                        WebView(viewContext).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.allowFileAccess = false
+                            settings.allowContentAccess = false
+                            settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
+                            settings.javaScriptCanOpenWindowsAutomatically = false
+                            settings.setSupportMultipleWindows(false)
+                            webViewClient = WebViewClient()
+                            setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, _ ->
+                                runCatching {
+                                    val filename = URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType)
+                                    val request = DownloadManager.Request(Uri.parse(downloadUrl))
+                                    request.setTitle(filename)
+                                    request.setMimeType(mimeType)
+                                    request.addRequestHeader("User-Agent", userAgent)
+                                    CookieManager.getInstance().getCookie(downloadUrl)
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?.let { request.addRequestHeader("Cookie", it) }
+                                    request.setNotificationVisibility(
+                                        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                                    )
+                                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
+                                    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                    manager.enqueue(request)
+                                    onStatus("Téléchargement Yandex ajouté à Android. Consulte les notifications.")
+                                }.onFailure {
+                                    onStatus("Impossible de démarrer le téléchargement : ${it.message ?: "erreur inconnue"}")
+                                }
+                            }
+                            loadUrl(url)
+                        }
+                    },
+                    update = { view ->
+                        if (view.url.isNullOrBlank()) view.loadUrl(url)
+                    }
+                )
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Fermer") }
+                }
+            }
+        }
+    }
+}
+
 private fun MediaViewerDialog(url: String, title: String, video: Boolean, onDismiss: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val player = remember(url, video) {
