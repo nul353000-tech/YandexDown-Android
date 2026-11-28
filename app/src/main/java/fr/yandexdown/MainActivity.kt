@@ -42,7 +42,16 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.window.Dialog
+import coil.ImageLoader
 import coil.compose.AsyncImage
+import coil.disk.DiskCache
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.cache.CacheDataSource
+import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
+import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import java.io.File
 import androidx.media3.common.MediaItem as ExoMediaItem
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -1206,7 +1215,6 @@ private fun isImageMedia(name: String): Boolean =
     name.substringAfterLast('.', "").lowercase() in setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "heic", "heif", "avif")
 
 @Composable
-@Composable
 private fun ProtectedLinkDialog(
     url: String,
     context: Context,
@@ -1277,13 +1285,33 @@ private fun ProtectedLinkDialog(
     }
 }
 
+@Composable
 private fun MediaViewerDialog(url: String, title: String, video: Boolean, onDismiss: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val imageLoader = remember(context) {
+        ImageLoader.Builder(context)
+            .diskCache {
+                DiskCache.Builder()
+                    .directory(File(context.cacheDir, "media-images"))
+                    .maxSizeBytes(200L * 1024L * 1024L)
+                    .build()
+            }
+            .build()
+    }
     val player = remember(url, video) {
-        if (video) ExoPlayer.Builder(context).build().apply {
-            setMediaItem(ExoMediaItem.fromUri(url))
-            prepare()
-            playWhenReady = true
+        if (video) {
+            val cache = MediaCache.get(context)
+            val cacheDataSource = CacheDataSource.Factory()
+                .setCache(cache)
+                .setUpstreamDataSourceFactory(DefaultDataSource.Factory(context))
+            ExoPlayer.Builder(context).build().apply {
+                val mediaSource = DefaultMediaSourceFactory(context)
+                    .setDataSourceFactory(cacheDataSource)
+                    .createMediaSource(ExoMediaItem.fromUri(url))
+                setMediaSource(mediaSource)
+                prepare()
+                playWhenReady = true
+            }
         } else null
     }
     androidx.compose.runtime.DisposableEffect(player) { onDispose { player?.release() } }
@@ -1301,10 +1329,25 @@ private fun MediaViewerDialog(url: String, title: String, video: Boolean, onDism
                         modifier = Modifier.fillMaxWidth().weight(1f)
                     )
                 } else {
-                    AsyncImage(model = url, contentDescription = title, contentScale = ContentScale.Fit,
+                    AsyncImage(model = url, imageLoader = imageLoader, contentDescription = title, contentScale = ContentScale.Fit,
                         modifier = Modifier.fillMaxWidth().weight(1f))
                 }
             }
+        }
+    }
+}
+
+
+private object MediaCache {
+    @Volatile private var instance: SimpleCache? = null
+
+    fun get(context: Context): SimpleCache {
+        return instance ?: synchronized(this) {
+            instance ?: SimpleCache(
+                File(context.applicationContext.cacheDir, "media-video"),
+                LeastRecentlyUsedCacheEvictor(500L * 1024L * 1024L),
+                StandaloneDatabaseProvider(context.applicationContext)
+            ).also { instance = it }
         }
     }
 }
