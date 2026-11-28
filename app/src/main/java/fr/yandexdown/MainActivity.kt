@@ -285,12 +285,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
         }
     }
 
-    fun queueDownload(item: DiskItem, isPrivate: Boolean, isArchive: Boolean = false): Boolean {
-        if (!canWritePublicDownloads) {
-            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            status = "Autorise l'accès au stockage, puis relance le téléchargement."
-            return false
-        }
+    fun canQueueTransfer(item: DiskItem): Boolean {
         val activeTransfers = transferQueue.count {
             it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.BLOCKED
         }
@@ -303,6 +298,16 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             status = "Fichier trop volumineux : ${formatSize(item.size)}. Limite actuelle : $maxFileSizeMb Mo."
             return false
         }
+        return true
+    }
+
+    fun queueDownload(item: DiskItem, isPrivate: Boolean, isArchive: Boolean = false): Boolean {
+        if (!canWritePublicDownloads) {
+            storagePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
+            status = "Autorise l'accès au stockage, puis relance le téléchargement."
+            return false
+        }
+        if (!canQueueTransfer(item)) return false
         val id = enqueuePersistentDownload(context, publicKey, item, isPrivate, startDelaySeconds.toLong())
         status = if (isArchive) {
             "Archive ajoutée à la file persistante (ID ${id.toString().take(8)})."
@@ -555,14 +560,14 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             Text("Réglages de téléchargement", style = MaterialTheme.typography.titleLarge)
                             Text("Les valeurs sont sauvegardées automatiquement.", style = MaterialTheme.typography.bodySmall)
-                            PreferenceSlider("Taille maximale par fichier", maxFileSizeMb,
+                            PreferenceSlider("Taille maximale des fichiers en file", maxFileSizeMb,
                                 if (maxFileSizeMb >= 1000) String.format(java.util.Locale.FRANCE, "%.1f Go", maxFileSizeMb / 1000f) else "$maxFileSizeMb Mo",
                                 100f..10000f, 98) {
                                 maxFileSizeMb = it.toInt()
                                 settingsPrefs.edit().putInt("max_file_size_mb", maxFileSizeMb).apply()
                             }
                             HorizontalDivider()
-                            PreferenceSlider("Nombre maximal de transferts en file", maxQueuedTransfers,
+                            PreferenceSlider("Nombre maximal de transferts en attente ou en cours", maxQueuedTransfers,
                                 "$maxQueuedTransfers transferts", 1f..20f, 18) {
                                 maxQueuedTransfers = it.toInt()
                                 settingsPrefs.edit().putInt("max_queued_transfers", maxQueuedTransfers).apply()
@@ -573,7 +578,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 startDelaySeconds = it.toInt()
                                 settingsPrefs.edit().putInt("start_delay_seconds", startDelaySeconds).apply()
                             }
-                            Text("La limite s’applique à la file persistante. La taille est vérifiée si Yandex la fournit. Le délai concerne les nouveaux téléchargements locaux.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Les limites s’appliquent aux transferts persistants ajoutés depuis l’application. La taille est vérifiée si Yandex la fournit. Le délai s’applique au démarrage de chaque transfert en file.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -910,8 +915,10 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             enabled = !busy,
                             onClick = {
                                 val item = selected!!
-                                val id = enqueuePersistentDropboxTransfer(context, publicKey, item)
-                                status = "Transfert Dropbox ajouté à la file persistante (ID ${id.toString().take(8)})."
+                                if (canQueueTransfer(item)) {
+                                    val id = enqueuePersistentDropboxTransfer(context, publicKey, item)
+                                    status = "Transfert Dropbox ajouté à la file persistante (ID ${id.toString().take(8)})."
+                                }
                                 showTransferQueue = true
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -935,8 +942,10 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             enabled = !busy,
                             onClick = {
                                 val item = selected!!
-                                val id = enqueuePersistentOneDriveTransfer(context, publicKey, item)
-                                status = "Transfert OneDrive ajouté à la file persistante (ID ${id.toString().take(8)})."
+                                if (canQueueTransfer(item)) {
+                                    val id = enqueuePersistentOneDriveTransfer(context, publicKey, item)
+                                    status = "Transfert OneDrive ajouté à la file persistante (ID ${id.toString().take(8)})."
+                                }
                                 showTransferQueue = true
                             },
                             modifier = Modifier.fillMaxWidth()
@@ -993,8 +1002,10 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                             enabled = !busy,
                             onClick = {
                                 val item = selected!!
-                                val id = enqueuePersistentPCloudTransfer(context, publicKey, item)
-                                status = "Transfert pCloud ajouté à la file persistante (ID ${id.toString().take(8)})."
+                                if (canQueueTransfer(item)) {
+                                    val id = enqueuePersistentPCloudTransfer(context, publicKey, item)
+                                    status = "Transfert pCloud ajouté à la file persistante (ID ${id.toString().take(8)})."
+                                }
                                 showTransferQueue = true
                             },
                             modifier = Modifier.fillMaxWidth()
