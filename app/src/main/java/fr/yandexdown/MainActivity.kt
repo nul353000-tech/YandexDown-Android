@@ -6,6 +6,8 @@ import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
 import android.content.Context
+import android.content.ContentValues
+import android.provider.MediaStore
 import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
@@ -152,6 +154,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var mediaUrl by remember { mutableStateOf("") }
     var mediaTitle by remember { mutableStateOf("") }
     var mediaIsVideo by remember { mutableStateOf(false) }
+    var temporaryCachedFile by remember { mutableStateOf<File?>(null) }
     var showProtectedLink by remember { mutableStateOf(false) }
     var protectedLinkUrl by remember { mutableStateOf("") }
     var autoProcessedLink by remember { mutableStateOf("") }
@@ -1105,13 +1108,28 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                         else getDownloadUrl(publicKey, item.path)
                                     downloadToAppStorage(context, source, item.name, temporary = true)
                                 }
-                                status = "Copie temporaire en cache : ${saved.absolutePath}. Android peut la supprimer automatiquement."
+                                temporaryCachedFile = saved
+                                status = "Copie temporaire prête : ${saved.name}. Tu peux maintenant l’enregistrer dans Téléchargements."
                                 selected = null
                             }
                         },
                         enabled = !busy && selected!!.type == "file" && !cloudOnly,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text("Mettre en cache temporairement") }
+                    temporaryCachedFile?.takeIf { it.exists() }?.let { cached ->
+                        OutlinedButton(
+                            onClick = {
+                                runTask("Enregistrement du cache temporaire dans Téléchargements…") {
+                                    val savedUri = withContext(Dispatchers.IO) {
+                                        exportCachedFileToDownloads(context, cached)
+                                    }
+                                    status = "Cache enregistré dans Téléchargements : $savedUri"
+                                }
+                            },
+                            enabled = !busy && canWritePublicDownloads,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text("Télécharger le cache temporaire dans Téléchargements") }
+                    }
                 }
 
                 if (currentPath.isNotEmpty()) {
@@ -1395,6 +1413,39 @@ private fun MediaViewerDialog(url: String, title: String, video: Boolean, onDism
 }
 
 
+
+
+private fun exportCachedFileToDownloads(context: Context, source: File): Uri {
+    require(source.exists() && source.isFile) { "Le fichier temporaire n’existe plus dans le cache." }
+    val safeName = source.name
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+        val values = ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME, safeName)
+            put(MediaStore.MediaColumns.MIME_TYPE, java.net.URLConnection.guessContentTypeFromName(safeName) ?: "application/octet-stream")
+            put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/YandexDown")
+            put(MediaStore.MediaColumns.IS_PENDING, 1)
+        }
+        val resolver = context.contentResolver
+        val uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values)
+            ?: throw IllegalStateException("Android n’a pas pu créer le fichier dans Téléchargements.")
+        try {
+            resolver.openOutputStream(uri)?.use { output ->
+                source.inputStream().buffered().use { input -> input.copyTo(output) }
+            } ?: throw IllegalStateException("Impossible d’ouvrir le fichier de destination.")
+            val completed = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
+            resolver.update(uri, completed, null, null)
+            return uri
+        } catch (error: Exception) {
+            resolver.delete(uri, null, null)
+            throw error
+        }
+    }
+    val directory = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "YandexDown")
+    if (!directory.exists() && !directory.mkdirs()) throw IllegalStateException("Impossible de créer Téléchargements/YandexDown.")
+    val destination = File(directory, safeName)
+    source.inputStream().buffered().use { input -> destination.outputStream().buffered().use { output -> input.copyTo(output) } }
+    return Uri.fromFile(destination)
+}
 
 private fun downloadToAppStorage(context: Context, url: String, name: String, temporary: Boolean): File {
     require(Uri.parse(url).scheme == "https") { "Le téléchargement doit utiliser HTTPS." }
