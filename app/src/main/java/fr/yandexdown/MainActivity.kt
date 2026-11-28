@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Link
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -130,6 +131,8 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var busy by remember { mutableStateOf(false) }
     var items by remember { mutableStateOf<List<DiskItem>>(emptyList()) }
     var selected by remember { mutableStateOf<DiskItem?>(null) }
+    var fileSearch by remember { mutableStateOf("") }
+    val visibleItems = remember(items, fileSearch) { if (fileSearch.isBlank()) items else items.filter { it.name.contains(fileSearch.trim(), ignoreCase = true) } }
     var showHistory by remember { mutableStateOf(false) }
     var linkHistory by remember { mutableStateOf(loadLinkHistory(context)) }
     var mediaUrl by remember { mutableStateOf("") }
@@ -1056,12 +1059,23 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                 }
 
                 if (items.isNotEmpty()) {
-                    Text("Contenu", style = MaterialTheme.typography.titleMedium)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Contenu", modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                        Text(visibleItems.size.toString() + " / " + items.size, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    OutlinedTextField(
+                        value = fileSearch,
+                        onValueChange = { fileSearch = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        label = { Text("Rechercher un fichier ou dossier") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        singleLine = true
+                    )
                     LazyColumn(
                         modifier = Modifier.heightIn(max = 460.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        items(items, key = { it.path }) { item ->
+                        items(visibleItems, key = { it.path }) { item ->
                             ListItem(
                                 headlineContent = { Text(item.name, maxLines = 2) },
                                 supportingContent = {
