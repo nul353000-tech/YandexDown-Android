@@ -160,6 +160,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var autoProcessedLink by remember { mutableStateOf("") }
     var yandexClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("yandex_client_id", "") ?: "") }
     var yandexToken by remember { mutableStateOf(TokenVault.read(context, "yandex_token")) }
+    var yandexSharedPath by remember { mutableStateOf("disk:/") }
     var googleDriveToken by remember { mutableStateOf(TokenVault.read(context, "google_drive_token")) }
     var dropboxClientId by remember { mutableStateOf(context.getSharedPreferences("settings", Context.MODE_PRIVATE).getString("dropbox_client_id", "") ?: "") }
     var dropboxToken by remember { mutableStateOf(TokenVault.read(context, "dropbox_access_token")) }
@@ -754,6 +755,35 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 ) { Text("Ouvrir mon disque") }
                             }
                             if (yandexToken.isNotBlank()) {
+                                OutlinedTextField(
+                                    value = yandexSharedPath,
+                                    onValueChange = { yandexSharedPath = it },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    label = { Text("Chemin du dossier partagé accessible") },
+                                    placeholder = { Text("disk:/NomDuDossier") },
+                                    singleLine = true
+                                )
+                                OutlinedButton(
+                                    enabled = !busy && yandexSharedPath.isNotBlank(),
+                                    onClick = {
+                                        runTask("Ouverture du dossier partagé via ton compte Yandex…") {
+                                            val path = yandexSharedPath.trim()
+                                            val data = withContext(Dispatchers.IO) { listPrivateFolder(yandexToken, path) }
+                                            publicKey = ""
+                                            currentPath = path
+                                            title = path.substringAfterLast('/').ifBlank { "Yandex Disk partagé" }
+                                            items = data
+                                            selected = null
+                                            status = "${data.size} élément(s) accessibles avec ton compte Yandex."
+                                        }
+                                    },
+                                    modifier = Modifier.fillMaxWidth()
+                                ) { Text("Ouvrir le dossier partagé avec mon compte") }
+                                Text(
+                                    "Ce mode fonctionne uniquement si le propriétaire a accordé l’accès à ton compte Yandex. Le lien protégé et son mot de passe ne donnent pas automatiquement un chemin API.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
                                 TextButton(onClick = {
                                     TokenVault.clear(context, "yandex_token")
                                     yandexToken = ""
