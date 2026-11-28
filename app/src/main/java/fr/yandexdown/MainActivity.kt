@@ -400,14 +400,22 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             autoProcessedLink = candidate
             link = candidate
             runTask("Analyse automatique du lien détecté…") {
-                val parsed = withContext(Dispatchers.IO) { inspectPublicLink(candidate) }
-                publicKey = parsed.third
-                link = parsed.third
-                currentPath = ""
-                title = parsed.first
-                items = parsed.second
-                selected = null
-                status = if (items.isEmpty()) "Ressource reconnue. Aucun élément listé." else "${items.size} élément(s) trouvé(s)."
+                try {
+                    val parsed = withContext(Dispatchers.IO) { inspectPublicLink(candidate) }
+                    publicKey = parsed.third
+                    link = parsed.third
+                    currentPath = ""
+                    title = parsed.first
+                    items = parsed.second
+                    selected = null
+                    status = if (items.isEmpty()) "Ressource reconnue. Aucun élément listé." else "${items.size} élément(s) trouvé(s)."
+                } catch (error: Exception) {
+                    if (isYandexPasswordRequired(error)) {
+                        protectedLinkUrl = candidate
+                        showProtectedLink = true
+                        status = "Ce partage est protégé par mot de passe. Connecte-toi dans la fenêtre Yandex intégrée ; l’API publique ne peut pas lister ce partage protégé."
+                    } else throw error
+                }
             }
         }
     }
@@ -460,7 +468,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         if (isYandexLink(link.trim())) {
                             protectedLinkUrl = link.trim()
                             showProtectedLink = true
-                            status = "Ouverture de la page Yandex sécurisée. Après validation du mot de passe, consulte les fichiers directement dans cette fenêtre."
+                            status = "Page sécurisée ouverte. Le partage protégé se consulte dans la fenêtre Yandex ; l’API publique ne peut pas réutiliser le mot de passe saisi dans cette page."
                         } else status = "Saisis d’abord un lien Yandex Disk valide."
                     },
                     enabled = !busy && isYandexLink(link.trim()),
@@ -480,16 +488,25 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                     Button(
                         onClick = {
                             runTask("Analyse du lien…") {
-                            val parsed = withContext(Dispatchers.IO) { inspectPublicLink(link.trim()) }
-                            linkHistory = rememberLinkHistory(context, linkHistory, parsed.third, parsed.first)
-                            publicKey = parsed.third
-                            link = parsed.third
-                            currentPath = ""
-                            title = parsed.first
-                            items = parsed.second
-                            selected = null
-                            status = if (items.isEmpty()) "Ressource reconnue. Aucun élément listé." else "${items.size} élément(s) trouvé(s)."
-                        }
+                                val submittedLink = link.trim()
+                                try {
+                                    val parsed = withContext(Dispatchers.IO) { inspectPublicLink(submittedLink) }
+                                    linkHistory = rememberLinkHistory(context, linkHistory, parsed.third, parsed.first)
+                                    publicKey = parsed.third
+                                    link = parsed.third
+                                    currentPath = ""
+                                    title = parsed.first
+                                    items = parsed.second
+                                    selected = null
+                                    status = if (items.isEmpty()) "Ressource reconnue. Aucun élément listé." else "${items.size} élément(s) trouvé(s)."
+                                } catch (error: Exception) {
+                                    if (isYandexPasswordRequired(error)) {
+                                        protectedLinkUrl = submittedLink
+                                        showProtectedLink = true
+                                        status = "Mot de passe accepté dans Yandex ? Ce partage protégé ne peut pas être listé par l’API publique. Utilise la fenêtre Yandex intégrée pour consulter les fichiers et les télécharger si le propriétaire l’autorise."
+                                    } else throw error
+                                }
+                            }
                     },
                     enabled = !busy && link.isNotBlank(),
                         modifier = Modifier.weight(1f)
@@ -2148,6 +2165,15 @@ private fun isYandexHost(host: String?): Boolean {
     return value == "disk.yandex.com" || value.endsWith(".disk.yandex.com") ||
         value == "disk.yandex.ru" || value.endsWith(".disk.yandex.ru") ||
         value == "yadi.sk"
+}
+
+private fun isYandexPasswordRequired(error: Throwable): Boolean {
+    val message = generateSequence(error) { it.cause }
+        .mapNotNull { it.message }
+        .joinToString(" ")
+        .lowercase()
+    return message.contains("http 403") &&
+        (message.contains("пароль") || message.contains("password") || message.contains("mot de passe"))
 }
 
 private fun isYandexLink(value: String): Boolean {
