@@ -45,6 +45,11 @@ internal fun enqueuePersistentDropboxTransfer(
     require(item.type == "file") { "Sélectionne un fichier pour le transfert Dropbox." }
 
     val request = OneTimeWorkRequestBuilder<DropboxCloudTransferWorker>()
+        .setInitialDelay(
+            context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getInt("start_delay_seconds", 0).coerceIn(0, 300).toLong(),
+            TimeUnit.SECONDS
+        )
         .setInputData(
             workDataOf(
                 "public_key" to publicKey,
