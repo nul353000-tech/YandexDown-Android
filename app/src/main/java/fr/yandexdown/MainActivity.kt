@@ -1078,6 +1078,40 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         enabled = !busy && selected!!.type == "file" && !cloudOnly,
                         modifier = Modifier.fillMaxWidth()
                     ) { Text(if (cloudOnly) "Téléchargement local désactivé (mode cloud uniquement)" else "Télécharger le fichier") }
+                    OutlinedButton(
+                        onClick = {
+                            val item = selected!!
+                            val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
+                            runTask("Enregistrement dans le stockage privé de YandexDown…") {
+                                val saved = withContext(Dispatchers.IO) {
+                                    val source = if (privateDownload) getPrivateDownloadUrl(yandexToken, item.path)
+                                        else getDownloadUrl(publicKey, item.path)
+                                    downloadToAppStorage(context, source, item.name, temporary = false)
+                                }
+                                status = "Fichier conservé dans YandexDown : ${saved.absolutePath}"
+                                selected = null
+                            }
+                        },
+                        enabled = !busy && selected!!.type == "file" && !cloudOnly,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Garder dans YandexDown (stockage privé)") }
+                    OutlinedButton(
+                        onClick = {
+                            val item = selected!!
+                            val privateDownload = publicKey.isBlank() && yandexToken.isNotBlank()
+                            runTask("Mise en cache temporaire…") {
+                                val saved = withContext(Dispatchers.IO) {
+                                    val source = if (privateDownload) getPrivateDownloadUrl(yandexToken, item.path)
+                                        else getDownloadUrl(publicKey, item.path)
+                                    downloadToAppStorage(context, source, item.name, temporary = true)
+                                }
+                                status = "Copie temporaire en cache : ${saved.absolutePath}. Android peut la supprimer automatiquement."
+                                selected = null
+                            }
+                        },
+                        enabled = !busy && selected!!.type == "file" && !cloudOnly,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Mettre en cache temporairement") }
                 }
 
                 if (currentPath.isNotEmpty()) {
@@ -1360,6 +1394,36 @@ private fun MediaViewerDialog(url: String, title: String, video: Boolean, onDism
     }
 }
 
+
+
+private fun downloadToAppStorage(context: Context, url: String, name: String, temporary: Boolean): File {
+    require(Uri.parse(url).scheme == "https") { "Le téléchargement doit utiliser HTTPS." }
+    val safeName = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").take(180).ifBlank { "fichier" }
+    val directory = if (temporary) File(context.cacheDir, "temporary-files")
+        else File(context.filesDir, "saved-files")
+    if (!directory.exists() && !directory.mkdirs()) {
+        throw IllegalStateException("Impossible de créer le dossier de stockage YandexDown.")
+    }
+    val destination = File(directory, safeName)
+    val partial = File(directory, "$safeName.part")
+    val request = Request.Builder().url(url).get().build()
+    OkHttpClient.Builder().callTimeout(10, TimeUnit.MINUTES).build().newCall(request).execute().use { response ->
+        if (!response.isSuccessful) throw IllegalStateException("Téléchargement refusé (HTTP ${response.code}).")
+        val body = response.body ?: throw IllegalStateException("Réponse vide du serveur.")
+        body.byteStream().use { input ->
+            partial.outputStream().buffered().use { output -> input.copyTo(output) }
+        }
+    }
+    if (destination.exists() && !destination.delete()) {
+        partial.delete()
+        throw IllegalStateException("Impossible de remplacer le fichier déjà enregistré.")
+    }
+    if (!partial.renameTo(destination)) {
+        partial.copyTo(destination, overwrite = true)
+        partial.delete()
+    }
+    return destination
+}
 
 private object MediaCache {
     @Volatile private var instance: SimpleCache? = null
