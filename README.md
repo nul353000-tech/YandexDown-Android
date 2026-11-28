@@ -8,7 +8,7 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 
 - Interface française Material 3 avec palette cohérente, écran principal défilant et sections avancées repliées par défaut.
 - Recherche instantanée dans les fichiers et dossiers affichés, avec compteur de résultats.
-- Réglages de téléchargement persistants par curseurs : taille maximale des téléchargements locaux (100 Mo à 10 Go), nombre maximal d'éléments dans la file (1 à 20) et délai initial (0 à 300 secondes).
+- Réglages de téléchargement persistants par curseurs : taille maximale des fichiers ajoutés à la file persistante (100 Mo à 10 Go), nombre maximal d'éléments dans la file (1 à 20) et délai initial (0 à 300 secondes).
 - Import d'un lien depuis le presse-papiers à l'ouverture (détection au premier plan) et bouton Coller.
 - Réception des liens partagés depuis les autres applications Android.
 - Résolution des redirections HTTP simples depuis Bitly, TinyURL, Rebrandly, Cuttly, T.ly, is.gd, shorturl.at et rb.gy vers un lien Yandex ; extraction native des destinations HTTPS explicites dans les paramètres d'URL.
