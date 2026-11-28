@@ -66,6 +66,11 @@ internal fun enqueuePersistentPCloudTransfer(
     }
 
     val request = OneTimeWorkRequestBuilder<PCloudCloudTransferWorker>()
+        .setInitialDelay(
+            context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getInt("start_delay_seconds", 0).coerceIn(0, 300).toLong(),
+            TimeUnit.SECONDS
+        )
         .setInputData(
             workDataOf(
                 "public_key" to publicKey,
