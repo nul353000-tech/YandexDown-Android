@@ -21,6 +21,8 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Affichage des fichiers et dossiers partagés.
 - Historique local des 100 derniers liens publics consultés : titre, URL et date, réouverture depuis l'application et effacement manuel.
 - Lecteur vidéo intégré Media3 pour les vidéos publiques compatibles avec les conteneurs et codecs décodés par Android.
+- Ouverture intégrée des liens Yandex protégés par mot de passe : le mot de passe est saisi directement sur la page Yandex et n'est pas lu ni enregistré par l'application.
+- Deux modes pour les liens protégés : « Téléchargement autorisé » (demande un téléchargement Android lorsque Yandex l'autorise) et « Lecture et cache uniquement » (bloque les téléchargements déclenchés par la page dans l'application et conserve le cache WebView temporaire dans l'espace privé de l'application).
 - Visionneuse photo intégrée pour JPEG, PNG, WebP, BMP, HEIC/HEIF et AVIF selon la version Android et le décodeur disponible.
 - Prise en charge sans liste blanche d’extensions : tous les fichiers renvoyés par Yandex Disk sont affichés, notamment les vidéos (MP4, MKV, AVI, MOV, WebM, etc.) et les archives (ZIP, RAR, 7Z, TAR, GZ, BZ2, XZ, ISO, etc.). Les transferts utilisent un flux binaire générique afin de ne pas refuser les extensions inconnues ; les limites de taille et les règles propres à chaque fournisseur cloud restent applicables.
 - Prise en charge des images sans liste blanche d’extensions : JPG/JPEG, PNG, GIF, WebP, HEIC, TIFF, BMP, SVG et autres fichiers image sont affichés et transférés comme fichiers binaires, sans conversion automatique.
@@ -72,7 +74,7 @@ L'intégration Google Drive nécessite un projet Google Cloud avec l'API Drive a
 
 Ces fonctions ne doivent pas être considérées comme opérationnelles tant qu'elles ne sont pas livrées et testées :
 - Intégration du SDK MEGA officiel Android (SDK natif C++/JNI) et transfert cloud-to-cloud MEGA.
-- Les liens Yandex protégés par mot de passe ne sont pas déverrouillables via les endpoints publics documentés de l’API REST. L’application ne prétend donc pas pouvoir télécharger directement ces liens protégés sans mécanisme officiel Yandex ; les liens publics non protégés restent traités directement.
+- Les liens Yandex protégés par mot de passe sont ouverts dans une WebView officielle ; l'API REST publique ne fournit pas de mécanisme documenté pour déverrouiller ces liens. Le téléchargement reste soumis aux autorisations du propriétaire et aux contrôles de Yandex. Le mode « Lecture et cache uniquement » empêche les téléchargements déclenchés via le gestionnaire WebView de l'application, mais le cache temporaire WebView n'est pas une garantie de disponibilité hors connexion ni un enregistrement complet du média.
 - Résolution avancée des pages intermédiaires JavaScript des services Linkvertise, Lootlinks, Work.ink, Cuty.io, Boost.ink, Adfoc.us et Rekonise.
 - Reprise pCloud au dernier octet : non disponible dans l'API officielle uploadfile ; la file persistante relance un envoi complet avec nopartial et vérification checksumfile.
 - Récupération de médias depuis des emplacements auxquels Android accorde explicitement l'accès.
