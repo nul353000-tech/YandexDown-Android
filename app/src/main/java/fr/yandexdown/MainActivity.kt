@@ -151,9 +151,9 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var destinationMenuOpen by remember { mutableStateOf(false) }
     var tokenEntry by remember { mutableStateOf("") }
     var showAccountSettings by remember { mutableStateOf(false) }
-    var showLinkTools by remember { mutableStateOf(true) }
+    var showLinkTools by remember { mutableStateOf(false) }
     var showTransferQueue by remember { mutableStateOf(false) }
-    var showDownloadSettings by remember { mutableStateOf(true) }
+    var showDownloadSettings by remember { mutableStateOf(false) }
     val settingsPrefs = remember(context) { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
     var maxFileSizeMb by remember { mutableIntStateOf(settingsPrefs.getInt("max_file_size_mb", 5000).coerceIn(100, 10000)) }
     var maxQueuedTransfers by remember { mutableIntStateOf(settingsPrefs.getInt("max_queued_transfers", 10).coerceIn(1, 20)) }
