@@ -30,9 +30,11 @@ internal fun enqueuePersistentDownload(
     context: Context,
     publicKey: String,
     item: DiskItem,
-    isPrivate: Boolean
+    isPrivate: Boolean,
+    startDelaySeconds: Long = 0L
 ): UUID {
     val request = OneTimeWorkRequestBuilder<YandexDownloadWorker>()
+        .setInitialDelay(startDelaySeconds.coerceIn(0L, 300L), TimeUnit.SECONDS)
         .setInputData(
             workDataOf(
                 "public_key" to publicKey,
