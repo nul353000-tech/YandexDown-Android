@@ -24,6 +24,8 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Validate backend Python syntax
+        run: python -m py_compile backend/app.py
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
