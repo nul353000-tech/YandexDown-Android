@@ -17,6 +17,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.result.IntentSenderRequest
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -151,6 +152,11 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
     var showAccountSettings by remember { mutableStateOf(false) }
     var showLinkTools by remember { mutableStateOf(true) }
     var showTransferQueue by remember { mutableStateOf(false) }
+    var showDownloadSettings by remember { mutableStateOf(true) }
+    val settingsPrefs = remember(context) { context.getSharedPreferences("settings", Context.MODE_PRIVATE) }
+    var maxFileSizeMb by remember { mutableIntStateOf(settingsPrefs.getInt("max_file_size_mb", 5000).coerceIn(100, 10000)) }
+    var maxQueuedTransfers by remember { mutableIntStateOf(settingsPrefs.getInt("max_queued_transfers", 10).coerceIn(1, 20)) }
+    var startDelaySeconds by remember { mutableIntStateOf(settingsPrefs.getInt("start_delay_seconds", 0).coerceIn(0, 300)) }
     var transferQueue by remember { mutableStateOf<List<WorkInfo>>(emptyList()) }
     val canWritePublicDownloads = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q ||
         context.checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
@@ -281,7 +287,19 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             status = "Autorise l'accès au stockage, puis relance le téléchargement."
             return false
         }
-        val id = enqueuePersistentDownload(context, publicKey, item, isPrivate)
+        val activeTransfers = transferQueue.count {
+            it.state == WorkInfo.State.ENQUEUED || it.state == WorkInfo.State.RUNNING || it.state == WorkInfo.State.BLOCKED
+        }
+        if (activeTransfers >= maxQueuedTransfers) {
+            status = "Limite atteinte : $maxQueuedTransfers transfert(s) déjà en attente ou en cours."
+            return false
+        }
+        val maxBytes = maxFileSizeMb.toLong() * 1024L * 1024L
+        if (item.size > 0L && item.size > maxBytes) {
+            status = "Fichier trop volumineux : ${formatSize(item.size)}. Limite actuelle : $maxFileSizeMb Mo."
+            return false
+        }
+        val id = enqueuePersistentDownload(context, publicKey, item, isPrivate, startDelaySeconds.toLong())
         status = if (isArchive) {
             "Archive ajoutée à la file persistante (ID ${id.toString().take(8)})."
         } else {
@@ -366,7 +384,13 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
         }
     }
 
-    MaterialTheme(colorScheme = lightColorScheme()) {
+    MaterialTheme(colorScheme = lightColorScheme(
+        primary = androidx.compose.ui.graphics.Color(0xFF2457C5),
+        onPrimary = androidx.compose.ui.graphics.Color.White,
+        secondary = androidx.compose.ui.graphics.Color(0xFF52647D),
+        background = androidx.compose.ui.graphics.Color(0xFFF5F7FB),
+        surface = androidx.compose.ui.graphics.Color.White
+    )) {
         Scaffold(topBar = {
             TopAppBar(
                 title = { Text(title) },
@@ -377,7 +401,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
             )
         }) { padding ->
             Column(
-                Modifier.fillMaxSize().padding(padding).padding(16.dp),
+                Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 if (clipboardLink.isNotBlank() && clipboardLink != link) {
@@ -516,6 +540,36 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                                 ) { Text("Voir les sites pris en charge") }
                             }
                             Text("Les autres services nécessitant une clé API, une validation humaine ou un protocole non documenté restent désactivés jusqu’à une intégration officielle vérifiée. Aucun CAPTCHA n’est contourné.", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+                OutlinedButton(onClick = { showDownloadSettings = !showDownloadSettings }, modifier = Modifier.fillMaxWidth()) {
+                    Text(if (showDownloadSettings) "Masquer les réglages" else "Réglages de téléchargement")
+                }
+                if (showDownloadSettings) {
+                    ElevatedCard(Modifier.fillMaxWidth()) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            Text("Réglages de téléchargement", style = MaterialTheme.typography.titleLarge)
+                            Text("Les valeurs sont sauvegardées automatiquement.", style = MaterialTheme.typography.bodySmall)
+                            PreferenceSlider("Taille maximale par fichier", maxFileSizeMb,
+                                if (maxFileSizeMb >= 1000) String.format(java.util.Locale.FRANCE, "%.1f Go", maxFileSizeMb / 1000f) else "$maxFileSizeMb Mo",
+                                100f..10000f, 98) {
+                                maxFileSizeMb = it.toInt()
+                                settingsPrefs.edit().putInt("max_file_size_mb", maxFileSizeMb).apply()
+                            }
+                            HorizontalDivider()
+                            PreferenceSlider("Nombre maximal de transferts en file", maxQueuedTransfers,
+                                "$maxQueuedTransfers transferts", 1f..20f, 18) {
+                                maxQueuedTransfers = it.toInt()
+                                settingsPrefs.edit().putInt("max_queued_transfers", maxQueuedTransfers).apply()
+                            }
+                            HorizontalDivider()
+                            PreferenceSlider("Délai avant le démarrage", startDelaySeconds,
+                                if (startDelaySeconds == 0) "Immédiat" else "$startDelaySeconds s", 0f..300f, 59) {
+                                startDelaySeconds = it.toInt()
+                                settingsPrefs.edit().putInt("start_delay_seconds", startDelaySeconds).apply()
+                            }
+                            Text("La limite s’applique à la file persistante. La taille est vérifiée si Yandex la fournit. Le délai concerne les nouveaux téléchargements locaux.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 }
@@ -1003,7 +1057,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                 if (items.isNotEmpty()) {
                     Text("Contenu", style = MaterialTheme.typography.titleMedium)
                     LazyColumn(
-                        modifier = Modifier.weight(1f, fill = true),
+                        modifier = Modifier.heightIn(max = 460.dp),
                         verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
                         items(items, key = { it.path }) { item ->
@@ -1051,7 +1105,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         }
                     }
                 } else {
-                    Spacer(Modifier.weight(1f))
+                    Spacer(Modifier.height(8.dp))
                     Text("Les liens publics et dossiers accessibles sont pris en charge. Les téléchargements sont enregistrés dans le dossier Téléchargements/YandexDown.", style = MaterialTheme.typography.bodySmall)
                 }
                 Text("Yandex public et privé disponibles après autorisation. Transferts directs vers Google Drive, Dropbox, OneDrive et pCloud après connexion. MEGA attend le SDK Android officiel lié nativement. Aucun CAPTCHA ni contrôle d’accès n’est contourné.",
@@ -1886,3 +1940,26 @@ private fun formatSize(size: Long): String = when {
 
 private fun cloudTransferItem(item: DiskItem): DiskItem =
     if (item.type == "dir") item.copy(name = "${item.name}.zip", type = "file", size = 0L, md5 = "") else item
+
+@Composable
+private fun PreferenceSlider(
+    label: String,
+    value: Int,
+    valueLabel: String,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    onValueChange: (Float) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(label, modifier = Modifier.weight(1f), style = MaterialTheme.typography.titleSmall)
+            Text(valueLabel, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        }
+        Slider(
+            value = value.toFloat().coerceIn(valueRange.start, valueRange.endInclusive),
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps
+        )
+    }
+}
