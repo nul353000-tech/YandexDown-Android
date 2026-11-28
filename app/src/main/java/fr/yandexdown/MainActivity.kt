@@ -460,6 +460,7 @@ fun YandexDownScreen(context: Context, initialLink: String = "", clipboardLink: 
                         if (isYandexLink(link.trim())) {
                             protectedLinkUrl = link.trim()
                             showProtectedLink = true
+                            status = "Ouverture de la page Yandex sécurisée. Après validation du mot de passe, consulte les fichiers directement dans cette fenêtre."
                         } else status = "Saisis d’abord un lien Yandex Disk valide."
                     },
                     enabled = !busy && isYandexLink(link.trim()),
@@ -1319,7 +1320,14 @@ private fun ProtectedLinkDialog(
                             settings.javaScriptCanOpenWindowsAutomatically = false
                             settings.setSupportMultipleWindows(false)
                             setOnLongClickListener { true }
-                            webViewClient = WebViewClient()
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageFinished(view: WebView, pageUrl: String) {
+                                    super.onPageFinished(view, pageUrl)
+                                    if (isYandexHost(Uri.parse(pageUrl).host)) {
+                                        onStatus("Page Yandex chargée. Si le mot de passe a été accepté, les fichiers sont consultables dans cette fenêtre sécurisée. L’API publique séparée ne peut pas réutiliser automatiquement cette session.")
+                                    }
+                                }
+                            }
                             setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, _ ->
                                 if (!currentDownloadAllowed) {
                                     onStatus("Mode lecture/cache uniquement : export bloqué. Le droit du propriétaire n’est pas modifié.")
