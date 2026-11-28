@@ -13,6 +13,23 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
+    signingConfigs {
+        create("stable") {
+            storeFile = file("yandexdown-release.jks")
+            storePassword = System.getenv("YANDEXDOWN_KEYSTORE_PASSWORD")
+            keyAlias = "yandexdown"
+            keyPassword = System.getenv("YANDEXDOWN_KEYSTORE_PASSWORD")
+        }
+    }
+    buildTypes {
+        getByName("debug") {
+            // Use the same private signing identity in CI whenever its keystore is present.
+            // Local builds without the CI keystore retain Android's standard debug signing.
+            if (file("yandexdown-release.jks").exists()) {
+                signingConfig = signingConfigs.getByName("stable")
+            }
+        }
+    }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
