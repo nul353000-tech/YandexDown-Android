@@ -1221,6 +1221,8 @@ private fun ProtectedLinkDialog(
     onDismiss: () -> Unit,
     onStatus: (String) -> Unit
 ) {
+    var downloadAllowed by remember(url) { mutableStateOf(true) }
+    val currentDownloadAllowed by rememberUpdatedState(downloadAllowed)
     androidx.activity.compose.BackHandler(onBack = onDismiss)
     Dialog(onDismissRequest = onDismiss) {
         Surface(
@@ -1234,40 +1236,61 @@ private fun ProtectedLinkDialog(
             ) {
                 Text("Accès sécurisé Yandex Disk", style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "Saisis le mot de passe directement dans la page Yandex. YandexDown ne lit ni ne conserve ce mot de passe. Si le propriétaire interdit le téléchargement, seul l’affichage restera possible.",
+                    "Saisis le mot de passe directement dans Yandex. YandexDown ne lit ni ne conserve ce mot de passe. Le droit de téléchargement reste décidé par le propriétaire et appliqué par Yandex.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                Text("Mode de consultation", style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = downloadAllowed, onClick = { downloadAllowed = true })
+                    Column(Modifier.weight(1f)) {
+                        Text("Téléchargement autorisé")
+                        Text("Enregistre dans Téléchargements si Yandex autorise le fichier.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    RadioButton(selected = !downloadAllowed, onClick = { downloadAllowed = false })
+                    Column(Modifier.weight(1f)) {
+                        Text("Lecture et cache uniquement")
+                        Text("Aucun export depuis l’application ; le cache temporaire reste privé.", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
                 AndroidView(
-                    modifier = Modifier.fillMaxWidth().height(520.dp),
+                    modifier = Modifier.fillMaxWidth().height(480.dp),
                     factory = { viewContext ->
                         WebView(viewContext).apply {
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
+                            settings.cacheMode = WebSettings.LOAD_DEFAULT
                             settings.allowFileAccess = false
                             settings.allowContentAccess = false
                             settings.mixedContentMode = WebSettings.MIXED_CONTENT_NEVER_ALLOW
                             settings.javaScriptCanOpenWindowsAutomatically = false
                             settings.setSupportMultipleWindows(false)
+                            setOnLongClickListener { true }
                             webViewClient = WebViewClient()
                             setDownloadListener { downloadUrl, userAgent, contentDisposition, mimeType, _ ->
-                                runCatching {
-                                    val filename = URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType)
-                                    val request = DownloadManager.Request(Uri.parse(downloadUrl))
-                                    request.setTitle(filename)
-                                    request.setMimeType(mimeType)
-                                    request.addRequestHeader("User-Agent", userAgent)
-                                    CookieManager.getInstance().getCookie(downloadUrl)
-                                        ?.takeIf { it.isNotBlank() }
-                                        ?.let { request.addRequestHeader("Cookie", it) }
-                                    request.setNotificationVisibility(
-                                        DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
-                                    )
-                                    request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
-                                    val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
-                                    manager.enqueue(request)
-                                    onStatus("Téléchargement Yandex ajouté à Android. Consulte les notifications.")
-                                }.onFailure {
-                                    onStatus("Impossible de démarrer le téléchargement : ${it.message ?: "erreur inconnue"}")
+                                if (!currentDownloadAllowed) {
+                                    onStatus("Mode lecture/cache uniquement : export bloqué. Le droit du propriétaire n’est pas modifié.")
+                                } else {
+                                    runCatching {
+                                        val filename = URLUtil.guessFileName(downloadUrl, contentDisposition, mimeType)
+                                        val request = DownloadManager.Request(Uri.parse(downloadUrl))
+                                        request.setTitle(filename)
+                                        request.setMimeType(mimeType)
+                                        request.addRequestHeader("User-Agent", userAgent)
+                                        CookieManager.getInstance().getCookie(downloadUrl)
+                                            ?.takeIf { it.isNotBlank() }
+                                            ?.let { request.addRequestHeader("Cookie", it) }
+                                        request.setNotificationVisibility(
+                                            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED
+                                        )
+                                        request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, filename)
+                                        val manager = context.getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
+                                        manager.enqueue(request)
+                                        onStatus("Téléchargement demandé à Android ; Yandex conserve le contrôle des autorisations.")
+                                    }.onFailure {
+                                        onStatus("Impossible de démarrer le téléchargement : ${it.message ?: "erreur inconnue"}")
+                                    }
                                 }
                             }
                             loadUrl(url)
