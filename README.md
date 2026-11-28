@@ -21,6 +21,8 @@ Application Android native Kotlin / Jetpack Compose pour parcourir les liens pub
 - Affichage des fichiers et dossiers partagés.
 - Historique local des 100 derniers liens publics consultés : titre, URL et date, réouverture depuis l'application et effacement manuel.
 - Lecteur vidéo intégré Media3 pour les vidéos publiques compatibles avec les conteneurs et codecs décodés par Android.
+- Pour chaque fichier Yandex (documents, photos, vidéos et autres), actions de stockage local : téléchargement dans Téléchargements, copie conservée dans l'espace privé de l'application (`filesDir`) ou copie temporaire dans le cache Android (`cacheDir`, supprimable automatiquement par le système).
+- Cache de lecture média : images via Coil (plafond 200 Mo) et vidéos via Media3 (plafond 500 Mo) ; ces caches sont distincts des copies enregistrées volontairement dans l'espace privé.
 - Ouverture intégrée des liens Yandex protégés par mot de passe : le mot de passe est saisi directement sur la page Yandex et n'est pas lu ni enregistré par l'application.
 - Deux modes pour les liens protégés : « Téléchargement autorisé » (demande un téléchargement Android lorsque Yandex l'autorise) et « Lecture et cache uniquement » (bloque les téléchargements déclenchés par la page dans l'application et conserve le cache WebView temporaire dans l'espace privé de l'application).
 - Visionneuse photo intégrée pour JPEG, PNG, WebP, BMP, HEIC/HEIF et AVIF selon la version Android et le décodeur disponible.
