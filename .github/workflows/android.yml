@@ -24,6 +24,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
+      - name: Restore stable Android signing key
+        if: ${{ github.event_name != 'pull_request' && secrets.YANDEXDOWN_KEYSTORE_BASE64 != '' && secrets.YANDEXDOWN_KEYSTORE_PASSWORD != '' }}
+        env:
+          YANDEXDOWN_KEYSTORE_BASE64: ${{ secrets.YANDEXDOWN_KEYSTORE_BASE64 }}
+        run: |
+          echo "$YANDEXDOWN_KEYSTORE_BASE64" | base64 --decode > app/yandexdown-release.jks
+          test -s app/yandexdown-release.jks
       - name: Validate backend Python syntax
         run: python -m py_compile backend/app.py
       - name: Set up Gradle
@@ -31,6 +38,8 @@ jobs:
         with:
           gradle-version: '8.9'
       - name: Unit tests and debug APK
+        env:
+          YANDEXDOWN_KEYSTORE_PASSWORD: ${{ secrets.YANDEXDOWN_KEYSTORE_PASSWORD }}
         run: gradle --no-daemon testDebugUnitTest assembleDebug
       - name: Upload APK
         uses: actions/upload-artifact@v4
