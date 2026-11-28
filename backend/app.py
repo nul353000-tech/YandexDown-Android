@@ -5,6 +5,7 @@ import posixpath
 import tempfile
 import time
 import zipfile
+import threading
 from pathlib import PurePosixPath
 from urllib.parse import quote, urlparse
 
@@ -15,6 +16,8 @@ from pydantic import BaseModel, Field
 
 app = FastAPI(title="YandexDown ZIP Cloud Extractor", version="1.0.0")
 REQUESTS_BY_IP = {}
+REQUESTS_LOCK = threading.Lock()
+MAX_TRACKED_CLIENTS = 10000
 HTTP = requests.Session()
 MAX_ARCHIVE_BYTES = 150 * 1024 * 1024
 MAX_EXPANDED_BYTES = 500 * 1024 * 1024
@@ -314,11 +317,20 @@ def health():
 def extract_archive(payload: ExtractRequest, request: Request):
     now = time.time()
     client_ip = request.client.host if request.client else "unknown"
-    recent = [stamp for stamp in REQUESTS_BY_IP.get(client_ip, []) if now - stamp < 3600]
-    if len(recent) >= 20:
-        raise HTTPException(429, "Limite de sécurité atteinte : réessaie dans un moment.")
-    recent.append(now)
-    REQUESTS_BY_IP[client_ip] = recent
+    with REQUESTS_LOCK:
+        # Bound memory use if the endpoint is hit by many distinct client addresses.
+        if client_ip not in REQUESTS_BY_IP and len(REQUESTS_BY_IP) >= MAX_TRACKED_CLIENTS:
+            stale = [ip for ip, stamps in REQUESTS_BY_IP.items()
+                     if not stamps or now - stamps[-1] >= 3600]
+            for ip in stale:
+                REQUESTS_BY_IP.pop(ip, None)
+            if len(REQUESTS_BY_IP) >= MAX_TRACKED_CLIENTS:
+                raise HTTPException(429, "Service temporairement saturé : réessaie plus tard.")
+        recent = [stamp for stamp in REQUESTS_BY_IP.get(client_ip, []) if now - stamp < 3600]
+        if len(recent) >= 20:
+            raise HTTPException(429, "Limite de sécurité atteinte : réessaie dans un moment.")
+        recent.append(now)
+        REQUESTS_BY_IP[client_ip] = recent
     provider = payload.provider.strip().lower()
     if provider not in ("google drive", "dropbox", "onedrive", "yandex disk privé"):
         raise HTTPException(400, "Destination non prise en charge par le relais.")
@@ -335,6 +347,7 @@ def extract_archive(payload: ExtractRequest, request: Request):
                 if len(entries) > MAX_ENTRIES:
                     raise HTTPException(413, "Archive trop complexe (plus de 5000 entrées).")
                 total = 0
+                actual_total = 0
                 files = []
                 for entry in entries:
                     if entry.is_dir():
@@ -358,6 +371,9 @@ def extract_archive(payload: ExtractRequest, request: Request):
                             block = src.read(1024 * 1024)
                             if not block:
                                 break
+                            actual_total += len(block)
+                            if actual_total > MAX_EXPANDED_BYTES:
+                                raise HTTPException(413, "Archive décompressée trop volumineuse (limite réelle 500 Mio).")
                             dst.write(block)
                     files.append((raw, target))
         except zipfile.BadZipFile:
