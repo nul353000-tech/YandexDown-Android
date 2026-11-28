@@ -25,12 +25,17 @@ jobs:
           distribution: temurin
           java-version: '17'
       - name: Restore stable Android signing key
-        if: ${{ github.event_name != 'pull_request' && secrets.YANDEXDOWN_KEYSTORE_BASE64 != '' && secrets.YANDEXDOWN_KEYSTORE_PASSWORD != '' }}
+        if: ${{ github.event_name != 'pull_request' }}
         env:
           YANDEXDOWN_KEYSTORE_BASE64: ${{ secrets.YANDEXDOWN_KEYSTORE_BASE64 }}
+          YANDEXDOWN_KEYSTORE_PASSWORD: ${{ secrets.YANDEXDOWN_KEYSTORE_PASSWORD }}
         run: |
-          echo "$YANDEXDOWN_KEYSTORE_BASE64" | base64 --decode > app/yandexdown-release.jks
-          test -s app/yandexdown-release.jks
+          if [ -n "$YANDEXDOWN_KEYSTORE_BASE64" ] && [ -n "$YANDEXDOWN_KEYSTORE_PASSWORD" ]; then
+            echo "$YANDEXDOWN_KEYSTORE_BASE64" | base64 --decode > app/yandexdown-release.jks
+            test -s app/yandexdown-release.jks
+          else
+            echo "Stable signing secrets are not configured; using temporary debug signing."
+          fi
       - name: Validate backend Python syntax
         run: python -m py_compile backend/app.py
       - name: Set up Gradle
